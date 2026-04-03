@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>360° Capture</title>
+  <meta name="description" content="Guided 360° panorama capture with gyroscope checkpoints." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #07090f;
+      --surface: #0f1219;
+      --glass: rgba(255, 255, 255, 0.06);
+      --border: rgba(255, 255, 255, 0.09);
+      --accent: #6c63ff;
+      --accent2: #00d4ff;
+      --green: #22c55e;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #000;
+      color: var(--text);
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #camera-feed {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      background: #000;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .overlay>* {
+      pointer-events: auto;
+    }
+
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
+    }
+
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-back {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 7px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .btn-back:hover { background: rgba(255, 255, 255, 0.2); }
+
+    .session-pill {
+      background: rgba(108, 99, 255, 0.25);
+      border: 1px solid rgba(108, 99, 255, 0.45);
+      color: #c4c0ff;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .counter-badge { display: none; } /* Hide old counter */
+
+    .btn-flip {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      border-radius: 50%;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-flip:hover { background: rgba(255, 255, 255, 0.22); }
+
+    .cam-spot {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      margin-top: -14px;
+      border-radius: 50%;
+      background: rgba(234, 191, 19, 0.85); /* yellow */
+      border: none;
+      z-index: 11;
+      pointer-events: none;
+      display: none;
+      transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+    }
+
+    .cam-spot.active {
+      background: #115e59; /* dark green */
+      border: 4px solid #fff;
+      width: 50px;
+      height: 50px;
+      margin-left: -25px;
+      margin-top: -25px;
+      transform: none;
+    }
+
+    .ar-finder {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 3px solid var(--green);
+      background-color: transparent;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ar-finder::before, .ar-finder::after {
+      content: '';
+      position: absolute;
+      background-color: var(--green);
+    }
+    .ar-finder::before {
+      width: 24px;
+      height: 3px;
+    }
+    .ar-finder::after {
+      width: 3px;
+      height: 24px;
+    }
+
+    .ar-arrow {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      margin-top: -14px;
+      margin-left: -14px;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      filter: drop-shadow(0px 2px 5px rgba(0, 0, 0, 0.4));
+    }
+
+    .ar-arrow svg { width: 100%; height: 100%; display: block; }
+    .ar-arrow.show { display: block; }
+
+    /* Removed hold text and ring since we auto capture dynamically without visual delay or use the ring differently */
+    .hold-text { display: none; }
+    .hold-ring-svg { display: none; }
+
+    .minimap {
+      position: fixed;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 15;
+    }
+
+    .minimap-row { display: flex; justify-content: center; gap: 16px; }
+    .minimap-row:nth-child(2) { margin-left: 12px; }
+
+    .minimap-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--green);
+      transition: background-color 0.3s, box-shadow 0.3s, opacity 0.3s;
+    }
+
+    .minimap-dot.done   { opacity: 0; pointer-events: none; }
+    .minimap-dot.target { background-color: white; box-shadow: 0 0 8px white; opacity: 1; }
+
+    #gyro-display {
+      position: fixed;
+      top: 80px;
+      left: 18px;
+      z-index: 20;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      backdrop-filter: blur(6px);
+      pointer-events: none;
+      line-height: 1.8;
+    }
+
+    #gyro-display span { color: var(--accent2); font-weight: 600; }
+
+    #flash {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.08s;
+    }
+
+    #flash.on { opacity: 0.85; }
+
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 24px 36px;
+      gap: 20px;
+      /* Remove bottom gradient for a cleaner look */
+    }
+
+    .progress-row { display: none; } /* Replaced by top pill */
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      width: 100%;
+    }
+
+    .btn-capture {
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: #eab308; /* solid yellow */
+      border: 6px solid #fff;
+      cursor: pointer;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      transition: transform 0.15s, opacity 0.1s;
+      flex-shrink: 0;
+    }
+
+    .btn-capture:active { transform: scale(0.92); }
+
+    .btn-capture.capturing {
+      opacity: 0.6;
+    }
+
+    .btn-bottom {
+      border-radius: 30px;
+      padding: 14px 24px;
+      font-size: 14px;
+      font-weight: 800;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-recenter {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .btn-done {
+      background: var(--green);
+      color: #000;
+      min-width: 100px;
+    }
+    
+    .btn-done:disabled {
+      background: rgba(34, 197, 94, 0.4);
+      color: rgba(0,0,0,0.5);
+      cursor: not-allowed;
+    }
+
+    .btn-clear {
+      background: rgba(239, 68, 68, 0.6); /* red */
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2.5px solid rgba(0, 0, 0, 0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+    }
+
+    .btn-done.loading .spinner  { display: block; }
+    .btn-done.loading .btn-label { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .btn-import {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .btn-import:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-1px); }
+
+    #toast {
+      position: fixed;
+      bottom: 140px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 13px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      z-index: 100;
+      max-width: 300px;
+      text-align: center;
+    }
+
+    #toast.show   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.success { border-color: rgba(34, 197, 94, 0.4);  color: var(--green); }
+    #toast.error   { border-color: rgba(239, 68, 68, 0.4);  color: var(--red); }
+    #toast.info    { border-color: rgba(0, 212, 255, 0.3);  color: var(--accent2); }
+
+    #no-camera {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 9, 15, 0.92);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .cam-permission-card {
+      background: linear-gradient(160deg, #13172a 0%, #0d1020 100%);
+      border: 1px solid rgba(108, 99, 255, 0.25);
+      border-radius: 28px;
+      padding: 36px 28px 32px;
+      max-width: 340px;
+      width: 100%;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04),
+        0 40px 80px rgba(0, 0, 0, 0.6),
+        0 0 60px rgba(108, 99, 255, 0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      animation: cardIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @keyframes cardIn {
+      from { transform: scale(0.82) translateY(30px); opacity: 0; }
+      to   { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
+    .cam-icon-wrap {
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(108, 99, 255, 0.2), rgba(0, 212, 255, 0.1));
+      border: 1.5px solid rgba(108, 99, 255, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 22px;
+      position: relative;
+      box-shadow: 0 0 30px rgba(108, 99, 255, 0.2);
+    }
+
+    .cam-icon-wrap::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 1px solid rgba(108, 99, 255, 0.15);
+      animation: pulseRing 2s ease-out infinite;
+    }
+
+    .cam-icon-wrap::after {
+      content: '';
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      border: 1px solid rgba(108, 99, 255, 0.08);
+      animation: pulseRing 2s ease-out 0.4s infinite;
+    }
+
+    @keyframes pulseRing {
+      0%   { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1.25); opacity: 0; }
+    }
+
+    .cam-icon-wrap svg { width: 38px; height: 38px; color: var(--accent2); }
+
+    .cam-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(108, 99, 255, 0.15);
+      border: 1px solid rgba(108, 99, 255, 0.3);
+      color: #c4c0ff;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .cam-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    #no-camera h2 {
+      font-size: 21px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, #c4c0ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+      line-height: 1.25;
+    }
+
+    #no-camera p {
+      font-size: 13.5px;
+      color: var(--muted);
+      max-width: 260px;
+      line-height: 1.75;
+      margin-bottom: 28px;
+    }
+
+    .btn-request-cam {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent) 0%, #5a52e0 100%);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 15px 26px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(108, 99, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      transition: transform 0.18s, box-shadow 0.18s;
+      letter-spacing: 0.2px;
+    }
+
+    .btn-request-cam:hover  { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(108, 99, 255, 0.6); }
+    .btn-request-cam:active { transform: translateY(0); }
+
+    .cam-note {
+      margin-top: 16px;
+      font-size: 11.5px;
+      color: rgba(107, 114, 128, 0.8);
+      line-height: 1.6;
+    }
+
+    .cam-note span { color: rgba(164, 167, 180, 0.7); }
+
+    #canvas { display: none; }
+
+    #gyro-notice {
+      position: fixed;
+      top: 80px;
+      right: 18px;
+      z-index: 20;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 11px;
+      color: var(--orange);
+      pointer-events: none;
+      display: none;
+      max-width: 170px;
+      line-height: 1.5;
+    }
+
+    #finish-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      text-align: center;
+      padding: 32px;
+      background: rgba(7, 9, 15, 0.97);
+      backdrop-filter: blur(20px);
+    }
+
+    #finish-screen .finish-icon { font-size: 70px; animation: pop 0.5s var(--ease) both; }
+
+    @keyframes pop {
+      0%   { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    #finish-screen h2 {
+      font-size: 26px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--text), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #finish-screen p { font-size: 14px; color: var(--muted); max-width: 280px; line-height: 1.7; }
+
+    .finish-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+    .btn-finish-stitch {
+      background: linear-gradient(135deg, var(--accent), #5a52e0);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 13px 26px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 6px 22px rgba(108, 99, 255, 0.45);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-finish-stitch:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(108, 99, 255, 0.6); }
+
+    .btn-finish-stitch .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2.5px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+    }
+
+    .btn-finish-stitch.loading .spinner   { display: inline-block; }
+    .btn-finish-stitch.loading .btn-label { display: none; }
+
+    .btn-finish-more {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 13px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-finish-more:hover { background: rgba(255, 255, 255, 0.1); }
+
+    #import-input { display: none; }
+
+    .top-progress-container {
+      position: fixed;
+      top: 60px;
+      left: 0;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      z-index: 20;
+    }
+
+    .progress-pill {
+      background: #000;
+      border-radius: 40px;
+      padding: 10px 30px;
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+
+    .progress-pill .num { color: var(--green); }
+
+    #direction-hint {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Hidden canvas for frame capture -->
+  <canvas id="canvas"></canvas>
+
+  <!-- Camera video feed -->
+  <video id="camera-feed" autoplay playsinline muted></video>
+
+  <!-- Flash effect -->
+  <div id="flash"></div>
+
+  <!-- No camera / permission state -->
+  <div id="no-camera">
+    <div class="cam-permission-card">
+      <div class="cam-icon-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+      </div>
+      <div class="cam-badge">
+        <span class="cam-badge-dot"></span>
+        Permission Required
+      </div>
+      <h2>Camera Access Needed</h2>
+      <p>Allow camera access to capture your 360° panorama. Tap below and accept the browser prompt.</p>
+      <button class="btn-request-cam" id="btn-request-cam">📷 Allow Camera</button>
+      <div class="cam-note">
+        Your camera is only used locally —<br>
+        <span>no video is recorded or stored.</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- AR Spots -->
+  <div id="spots-container"></div>
+
+  <!-- AR Finder -->
+  <div id="ar-finder" class="ar-finder">
+    <div class="hold-text"></div>
+    <svg class="hold-ring-svg" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#22c55e" stroke-width="8" stroke-dasharray="289"
+        stroke-dashoffset="289" id="hold-ring-progress" />
+    </svg>
+  </div>
+
+  <!-- Arrow indicator -->
+  <div id="ar-arrow" class="ar-arrow">
+    <svg viewBox="0 0 24 24" fill="white">
+      <path d="M5 3L19 12L5 21V3Z" />
+    </svg>
+  </div>
+
+  <!-- Gyro angle debug display -->
+  <div id="gyro-display">
+    α <span id="g-alpha">—</span>°
+    &nbsp;β <span id="g-beta">—</span>°
+    &nbsp;γ <span id="g-gamma">—</span>°
+  </div>
+
+  <!-- Gyro unavailable notice -->
+  <div id="gyro-notice">⚠️ Gyroscope not detected.<br>Tap shutter manually.</div>
+
+  <!-- Top Progress and Hint -->
+  <div class="top-progress-container">
+    <div class="progress-pill">
+      PROGRESS: <span class="num" id="progress-label">0 / 60</span>
+    </div>
+    <div id="direction-hint">Point camera forward to begin</div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="top-left">
+      <a class="btn-back" href="index.html">← Home</a>
+      <div class="session-pill" id="session-name">Loading…</div>
+    </div>
+    <div class="top-right">
+      <div class="counter-badge">
+        📷 <span class="num" id="captured-count">0</span>
+      </div>
+      <button class="btn-flip" id="btn-flip" title="Flip Camera">🔄</button>
+    </div>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="bottom-bar">
+    <button class="btn-capture" id="btn-capture" title="Capture photo"></button>
+    <div class="action-row">
+      <button class="btn-bottom btn-recenter" id="btn-recenter">Re-center</button>
+      <button class="btn-bottom btn-done" id="btn-done" disabled>
+        <div class="spinner"></div>
+        <span class="btn-label">Done</span>
+      </button>
+      <button class="btn-bottom btn-clear" id="btn-clear">Clear</button>
+    </div>
+  </div>
+
+  <!-- Import file input (hidden) -->
+  <input type="file" id="import-input" accept="image/*" />
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- Finish screen -->
+  <div id="finish-screen">
+    <div class="finish-icon">🎉</div>
+    <h2>All Checkpoints Done!</h2>
+    <p id="finish-msg">You've captured all 36 photos. Ready to stitch your 360° panorama!</p>
+    <div class="finish-actions">
+      <button class="btn-finish-stitch" id="btn-finish-stitch">
+        <span class="spinner"></span>
+        <span class="btn-label">🔗 Create Panorama</span>
+      </button>
+      <button class="btn-finish-more" id="btn-finish-more">📷 Add More</button>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    // ── API helper ────────────────────────────────────────────────────────────
+    function api(path, opts = {}) {
+      opts.headers = { ...opts.headers, 'Bypass-Tunnel-Reminder': 'true' };
+      return fetch(API_BASE + path, opts);
+    }
+
+    // ── Read session ID from URL query string ─────────────────────────────────
+    let SESSION_ID = new URLSearchParams(location.search).get('session');
+    let isNewSession = false;
+    
+    if (!SESSION_ID) {
+      // Create a local session ID if navigating directly to camera without query param
+      SESSION_ID = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+      isNewSession = true;
+      // Replace URL string so refresh doesn't wipe progress
+      window.history.replaceState({}, '', `?session=${SESSION_ID}`);
+      
+      document.getElementById('session-name').textContent = 'New Session';
+    }
+
+    // Update page title
+    document.title = `360° Capture`;
+
+    // ── Load session info from API ─────────────────────────────────────────────
+    let capturedCount = 0;
+
+    async function loadSession() {
+      if (isNewSession) return; // Wait until first photo
+      
+      try {
+        const res  = await api(`/api/session/${SESSION_ID}`);
+        const data = await res.json();
+        // Just fail silently and let it be a new session if the backend doesn't know about it yet
+        if (!data.success) { 
+           isNewSession = true;
+           document.getElementById('session-name').textContent = 'New Session';
+           return; 
+        }
+
+        document.getElementById('session-name').textContent = data.name;
+        document.title = `360° Capture — ${data.name}`;
+        capturedCount = data.capture_count || 0;
+
+        // Mark already-captured checkpoints
+        if (capturedCount > 0) {
+          let n = Math.min(capturedCount, TOTAL_TARGETS);
+          for (let i = 0; i < n; i++) { checkpoints[i].done = true; }
+          for (let i = 0; i < TOTAL_TARGETS; i++) {
+            if (!checkpoints[i].done) { currentTarget = i; break; }
+          }
+          buildGrid();
+          updateProgress();
+          updateDirectionHint();
+          if (n >= TOTAL_TARGETS) showFinish();
+        }
+      } catch (e) {
+        document.getElementById('session-name').textContent = 'Error';
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    //  360° Guided Capture — Main Script
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const HOLD_MS    = 600; // slightly faster capture
+    const ANGLE_TOL  = 8;
+
+    function buildCheckpoints() {
+      const pts = [];
+      const yawStep = 24; // Reduced from 30 for more overlap
+      const pitchRows = [-60, -40, -20, 0, 20, 40, 60]; // 20° steps instead of 30°
+      pitchRows.forEach(pitch => {
+        for (let yaw = 0; yaw < 360; yaw += yawStep) {
+          pts.push({ yaw, pitch, done: false });
+        }
+      });
+      return pts;
+    }
+
+    let checkpoints = buildCheckpoints();
+    const TOTAL_TARGETS = checkpoints.length;
+    
+    function initSpots() {
+      const container = document.getElementById('spots-container');
+      if (!container) return;
+      container.innerHTML = '';
+      checkpoints.forEach((cp, i) => {
+        const el = document.createElement('div');
+        el.className = 'cam-spot';
+        el.id = 'spot-' + i;
+        container.appendChild(el);
+      });
+    }
+    initSpots();
+    
+    let currentTarget = 0;
+    let holdTimer = null;
+    let holdStart = null;
+    let gyroActive = false;
+    let facingMode = 'environment';
+    let stream = null;
+    let isCapturing = false;
+
+    let devAlpha = 0, devBeta = 0, devGamma = 0;
+
+    const video          = document.getElementById('camera-feed');
+    const canvas         = document.getElementById('canvas');
+    const ctx            = canvas.getContext('2d');
+    const noCamera       = document.getElementById('no-camera');
+    const arFinder       = document.getElementById('ar-finder');
+    const arArrow        = document.getElementById('ar-arrow');
+    const holdRingProgress = document.getElementById('hold-ring-progress');
+    const dirHint        = document.getElementById('direction-hint');
+    const minimap        = document.getElementById('minimap');
+    const gyroDisplay    = document.getElementById('gyro-display');
+    const gyroNotice     = document.getElementById('gyro-notice');
+    const flashEl        = document.getElementById('flash');
+    const progressLabel  = document.getElementById('progress-label');
+    const btnCapture     = document.getElementById('btn-capture');
+    const btnDone        = document.getElementById('btn-done');
+    const btnRecenter    = document.getElementById('btn-recenter');
+    const btnClear       = document.getElementById('btn-clear');
+    const btnFlip        = document.getElementById('btn-flip');
+    const importInput    = document.getElementById('import-input');
+    const toastEl        = document.getElementById('toast');
+    const finishScreen   = document.getElementById('finish-screen');
+    const finishMsg      = document.getElementById('finish-msg');
+    const btnFinishStitch = document.getElementById('btn-finish-stitch');
+    const btnFinishMore  = document.getElementById('btn-finish-more');
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CHECKPOINT MINIMAP (Removed to simplify UI)
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function buildGrid() {}
+    function updateGrid() {}
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // PROGRESS
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function updateProgress() {
+      const done = checkpoints.filter(c => c.done).length;
+      progressLabel.textContent = `${done} / ${TOTAL_TARGETS}`;
+      btnDone.disabled = done < 2;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CAMERA INIT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function startCamera(mode = 'environment') {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: mode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+        video.srcObject = stream;
+        noCamera.style.display = 'none';
+        facingMode = mode;
+      } catch (err) {
+        console.warn('Camera error:', err);
+        noCamera.style.display = 'flex';
+      }
+    }
+
+    document.getElementById('btn-request-cam').addEventListener('click', () => startCamera());
+    startCamera();
+    btnFlip.addEventListener('click', () => startCamera(facingMode === 'environment' ? 'user' : 'environment'));
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // GYROSCOPE
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function requestGyro() {
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const perm = await DeviceOrientationEvent.requestPermission();
+          if (perm !== 'granted') { gyroNotice.style.display = 'block'; return; }
+        } catch { gyroNotice.style.display = 'block'; return; }
+      }
+      window.addEventListener('deviceorientation', onOrientation, true);
+      requestAnimationFrame(renderLoop);
+    }
+
+    function onOrientation(e) {
+      if (e.alpha === null) { gyroNotice.style.display = 'block'; return; }
+      gyroActive = true;
+      gyroNotice.style.display = 'none';
+      devAlpha = e.alpha || 0;
+      devBeta  = e.beta  || 0;
+      devGamma = e.gamma || 0;
+    }
+
+    requestGyro();
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // ANGLE MATCHING & RENDER LOOP
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let vYaw = null;
+    let vPitch = null;
+    let vRoll = null;
+
+    function lerpAngle(current, target, factor) {
+      if (current === null) return target;
+      let diff = target - current;
+      while (diff > 180) diff -= 360;
+      while (diff < -180) diff += 360;
+      return current + diff * factor;
+    }
+
+    function renderLoop() {
+      requestAnimationFrame(renderLoop);
+      if (gyroActive) checkAngle();
+    }
+
+    function checkAngle() {
+      if (!gyroActive) return;
+
+      // ── Convert Euler angles to World Camera Vectors ──
+      const rad = Math.PI / 180;
+      const sa = Math.sin(devAlpha * rad), ca = Math.cos(devAlpha * rad);
+      const sb = Math.sin(devBeta * rad),  cb = Math.cos(devBeta * rad);
+      const sc = Math.sin(devGamma * rad), cc = Math.cos(devGamma * rad);
+
+      // Extract accurate Cartesian forward vectors (-Z axis of device)
+      const CamX = ca*sb*cc - sa*sc;
+      const CamY = sa*sb*cc + ca*sc;
+      const CamZ = -cb*cc;
+
+      let rawYaw = Math.atan2(CamY, CamX) / rad;
+      let rawPitch = Math.asin(Math.max(-1, Math.min(1, CamZ))) / rad;
+
+      // Compute display roll safely
+      let rawRoll = -devGamma;
+      if (devBeta > 90) rawRoll = devGamma;
+
+      rawYaw += yawOffset; // Apply manual recenter offset
+
+      // Heavy smoothing applied to world vectors
+      vYaw   = lerpAngle(vYaw, rawYaw, 0.45);
+      vPitch = lerpAngle(vPitch, rawPitch, 0.45);
+      vRoll  = lerpAngle(vRoll, rawRoll, 0.15);
+
+      document.getElementById('g-alpha').textContent = vYaw.toFixed(1);
+      document.getElementById('g-beta').textContent  = vPitch.toFixed(1);
+      document.getElementById('g-gamma').textContent = vRoll.toFixed(1);
+      
+      let pxPerDeg = window.innerWidth / (facingMode === 'user' ? -90 : 90);
+      let cx = window.innerWidth  / 2;
+      let cy = window.innerHeight / 2;
+
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+
+      // Hide all first
+      for (let i = 0; i < checkpoints.length; i++) {
+        const spotEl = document.getElementById('spot-' + i);
+        if (spotEl) {
+          spotEl.style.display = 'none';
+          spotEl.classList.remove('active');
+        }
+      }
+
+      let closestDist = Infinity;
+      let cpIdx = currentTarget;
+
+      // Safely target the correct single undone checkpoint
+      if (cpIdx >= 0 && cpIdx < checkpoints.length) {
+        let cp = checkpoints[cpIdx];
+        if (!cp.done) {
+          let dYaw  = vYaw - cp.yaw;
+          while (dYaw >  180) dYaw -= 360;
+          while (dYaw < -180) dYaw += 360;
+          let dPitch = cp.pitch - vPitch;
+
+          let tx = cx + (dYaw   * pxPerDeg);
+          let ty = cy - (dPitch * pxPerDeg);
+          
+          let spotEl = document.getElementById('spot-' + cpIdx);
+
+          if (spotEl) {
+             if (!(tx < -vw || tx > vw * 2 || ty < -vh || ty > vh * 2)) {
+               spotEl.style.display = 'block';
+               
+               if (!cp.sTx) { cp.sTx = tx; cp.sTy = ty; }
+               if (Math.abs(tx - cp.sTx) > 800) { cp.sTx = tx; cp.sTy = ty; }
+               cp.sTx += (tx - cp.sTx) * 0.45;
+               cp.sTy += (ty - cp.sTy) * 0.45;
+               
+               spotEl.style.transform = `translate(${cp.sTx - cx}px, ${cp.sTy - cy}px)`;
+               
+               closestDist = Math.sqrt(Math.pow(cp.sTx - cx, 2) + Math.pow(cp.sTy - cy, 2));
+             } else {
+               // Update tracking offscreen so arrow continues working
+               cp.sTx = tx; cp.sTy = ty;
+             }
+          }
+        }
+      }
+
+      arFinder.style.transform = `translate(-50%, -50%) rotate(${vRoll}deg)`;
+
+      const ALIGN_RADIUS = 30;
+      const onTarget = (closestDist <= ALIGN_RADIUS);
+
+      if (onTarget && cpIdx >= 0 && cpIdx < checkpoints.length) {
+        document.getElementById('spot-' + cpIdx).classList.add('active');
+
+        arFinder.classList.add('holding');
+        arArrow.classList.remove('show');
+        if (!holdStart) holdStart = Date.now();
+        const elapsed = Date.now() - holdStart;
+        
+        // Removed hold ring progress update since the line was removed
+        if (holdRingProgress) {
+          const pct = Math.min(elapsed / HOLD_MS, 1);
+          holdRingProgress.style.strokeDashoffset = 289 - (289 * pct);
+        }
+
+        if (elapsed >= HOLD_MS && !isCapturing) {
+          captureFrame();
+        }
+      } else {
+        cancelHold();
+        
+        if (cpIdx >= 0 && cpIdx < checkpoints.length && closestDist > 65) {
+          arArrow.classList.add('show');
+          let dx = checkpoints[cpIdx].sTx - cx;
+          let dy = checkpoints[cpIdx].sTy - cy;
+          let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          arArrow.style.transform = `rotate(${angle}deg) translateX(55px)`;
+        } else {
+          arArrow.classList.remove('show');
+        }
+      }
+    }
+
+    setInterval(() => { if (gyroActive) checkAngle(); }, 50);
+
+    function cancelHold() {
+      holdStart = null;
+      arFinder.classList.remove('holding');
+      if (holdRingProgress) holdRingProgress.style.strokeDashoffset = 289;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CAPTURE
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function captureFrame() {
+      if (isCapturing) return;
+      isCapturing = true;
+      triggerFlash();
+
+      const MAX_DIM = 1280;
+      let vw = video.videoWidth  || 1280;
+      let vh = video.videoHeight || 720;
+      if (vw > MAX_DIM || vh > MAX_DIM) {
+        if (vw > vh) { vh = Math.floor(vh * (MAX_DIM / vw)); vw = MAX_DIM; }
+        else         { vw = Math.floor(vw * (MAX_DIM / vh)); vh = MAX_DIM; }
+      }
+      canvas.width = vw;  canvas.height = vh;
+      ctx.drawImage(video, 0, 0, vw, vh);
+
+      canvas.toBlob(async (blob) => {
+        if (holdRingProgress) holdRingProgress.style.strokeDashoffset = 0;
+        try {
+          const formData = new FormData();
+          formData.append('image', blob, 'capture.jpg');
+          const res = await api(`/api/upload/${SESSION_ID}`, { method: 'POST', body: formData });
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server returned ${res.status}: ${errText.substring(0, 60)}...`);
+          }
+          const data = await res.json();
+          if (data.success) {
+            capturedCount = data.total;
+            if (currentTarget < TOTAL_TARGETS) checkpoints[currentTarget].done = true;
+            
+            let allDone = true;
+            for (let i = 0; i < TOTAL_TARGETS; i++) {
+              if (!checkpoints[i].done) { allDone = false; break; }
+            }
+            if (allDone) { showFinish(); }
+            else {
+              // Advance safely to the very next undone dot dynamically!
+              currentTarget = checkpoints.findIndex(c => !c.done);
+              if (currentTarget === -1) currentTarget = 0;
+
+              updateProgress(); 
+              updateDirectionHint();
+              showToast(`✅ Photo ${capturedCount} saved`, 'success', 1500);
+            }
+          } else {
+            showToast('❌ ' + data.message, 'error');
+          }
+        } catch (err) {
+          showToast('⚠️ Upload failed: ' + err.message, 'error');
+        } finally {
+          setTimeout(() => { isCapturing = false; cancelHold(); }, 600);
+        }
+      }, 'image/jpeg', 0.85);
+    }
+
+    function triggerFlash() {
+      flashEl.classList.add('on');
+      setTimeout(() => flashEl.classList.remove('on'), 150);
+    }
+
+    btnCapture.addEventListener('click', () => captureFrame());
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // DIRECTION HINT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const YAW_LABELS = {
+      0: 'straight ahead', 30: 'rotate right 30°', 60: 'rotate right 60°',
+      90: 'to the right', 120: 'rotate right 120°', 150: 'rotate right 150°',
+      180: 'turn behind you', 210: 'rotate left 150°', 240: 'rotate left 120°',
+      270: 'to the left', 300: 'rotate left 60°', 330: 'rotate left 30°',
+    };
+    const PITCH_LABELS = { '-30': 'tilt down', '0': 'level', '30': 'tilt up' };
+
+    function updateDirectionHint() {
+      if (currentTarget >= TOTAL_TARGETS || currentTarget < 0) return;
+      
+      let cp = checkpoints[currentTarget];
+      if (!cp || cp.done) {
+        let firstUn = checkpoints.findIndex(c => !c.done);
+        if (firstUn === -1) return;
+        cp = checkpoints[firstUn];
+      }
+
+      const yLbl = YAW_LABELS[cp.yaw]        || `yaw ${cp.yaw}°`;
+      const pLbl = PITCH_LABELS[String(cp.pitch)] || `pitch ${cp.pitch}°`;
+      const rowNum = Math.floor(checkpoints.indexOf(cp) / 12) + 1;
+      dirHint.textContent = `Row ${rowNum}: ${pLbl} — ${yLbl}`;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // STITCH
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function doStitch(btn) {
+      btn.classList.add('loading');
+      btn.disabled = true;
+      try {
+        const res  = await api(`/api/stitch/${SESSION_ID}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Panorama stitched!', 'success');
+          setTimeout(() => { 
+            sessionStorage.setItem('active_session', SESSION_ID);
+            location.href = `detail.html?session=${SESSION_ID}`; 
+          }, 1200);
+        } else {
+          showToast('❌ ' + data.message, 'error');
+          btn.classList.remove('loading');
+          btn.disabled = false;
+        }
+      } catch (err) {
+        showToast('⚠️ ' + err.message, 'error');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+      }
+    }
+
+    if (btnDone) btnDone.addEventListener('click', () => doStitch(btnDone));
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // BOTTOM ACTIONS
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let yawOffset = 0;
+
+    if (btnRecenter) {
+      btnRecenter.addEventListener('click', () => {
+         // Reset the horizontal rotation so the current view becomes '0'
+         yawOffset -= vYaw;
+         showToast('🎯 View Re-centered', 'info');
+      });
+    }
+
+    if (btnClear) {
+      btnClear.addEventListener('click', async () => {
+        if (!confirm("Are you sure you want to clear all progress?")) return;
+        
+        try {
+          await api(`/api/session/${SESSION_ID}/delete`, { method: 'POST' });
+        } catch(err) {
+            // It might fail if session is completely new, that's fine.
+        }
+
+        // Generate a fresh session local ID so it restarts empty on the server too
+        SESSION_ID = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+        window.history.replaceState({}, '', `?session=${SESSION_ID}`);
+        
+        checkpoints = buildCheckpoints();
+        initSpots();
+        currentTarget = 0;
+        capturedCount = 0;
+        yawOffset = 0;
+        
+        buildGrid();
+        updateProgress();
+        updateDirectionHint();
+        showToast('🗑️ Cleared successfully.', 'info');
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // FINISH SCREEN
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function showFinish() {
+      updateProgress();
+      finishMsg.textContent = `You've captured all ${TOTAL_TARGETS} photos. Ready to stitch your 360° panorama!`;
+      finishScreen.style.display = 'flex';
+    }
+
+    btnFinishStitch.addEventListener('click', () => doStitch(btnFinishStitch));
+    btnFinishMore.addEventListener('click', () => {
+      finishScreen.style.display = 'none';
+      checkpoints = buildCheckpoints();
+      initSpots();
+      currentTarget = 0;
+      buildGrid(); updateProgress(); updateDirectionHint();
+      showToast('📷 Keep capturing more photos!', 'info');
+    });
+
+    // IMPORT EXISTING PANORAMA logic removed for minimal UI 
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // TOAST
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let toastTimer;
+    function showToast(msg, type = '', duration = 3000) {
+      toastEl.textContent = msg;
+      toastEl.className = 'show ' + type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastEl.className = ''; }, duration);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // INIT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    buildGrid();
+    updateProgress();
+    updateDirectionHint();
+
+    // Load session info (sets capturedCount and initialises checkpoints)
+    loadSession();
+
+    setTimeout(() => {
+      if (!gyroActive) gyroNotice.style.display = 'block';
+    }, 2000);
+  </script>
+</body>
+
+</html>
