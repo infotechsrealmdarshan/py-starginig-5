@@ -897,12 +897,16 @@
 
     function buildCheckpoints() {
       const pts = [];
-      const yawStep = 24; // Reduced from 30 for more overlap
-      const pitchRows = [-60, -40, -20, 0, 20, 40, 60]; // 20° steps instead of 30°
+      // Center view capture: 15 dots total
+      const yawSteps = [-45, -20, 0, 20, 45]; 
+      const pitchRows = [-25, 0, 25]; 
+      
       pitchRows.forEach(pitch => {
-        for (let yaw = 0; yaw < 360; yaw += yawStep) {
-          pts.push({ yaw, pitch, done: false });
-        }
+        yawSteps.forEach(yaw => {
+          // Normalize yaw to 0-360 range
+          const normalizedYaw = (yaw + 360) % 360;
+          pts.push({ yaw: normalizedYaw, pitch, done: false });
+        });
       });
       return pts;
     }
@@ -1086,56 +1090,61 @@
       const vh = window.innerHeight;
       const vw = window.innerWidth;
 
-      // Hide all first
+      let closestDist = Infinity;
+      let closestIdx = -1;
+
+      // Show all undone and find closest
       for (let i = 0; i < checkpoints.length; i++) {
-        const spotEl = document.getElementById('spot-' + i);
+        let cp = checkpoints[i];
+        let spotEl = document.getElementById('spot-' + i);
         if (spotEl) {
           spotEl.style.display = 'none';
           spotEl.classList.remove('active');
-        }
-      }
-
-      let closestDist = Infinity;
-      let cpIdx = currentTarget;
-
-      // Safely target the correct single undone checkpoint
-      if (cpIdx >= 0 && cpIdx < checkpoints.length) {
-        let cp = checkpoints[cpIdx];
-        if (!cp.done) {
-          let dYaw  = vYaw - cp.yaw;
-          while (dYaw >  180) dYaw -= 360;
-          while (dYaw < -180) dYaw += 360;
-          let dPitch = cp.pitch - vPitch;
-
-          let tx = cx + (dYaw   * pxPerDeg);
-          let ty = cy - (dPitch * pxPerDeg);
           
-          let spotEl = document.getElementById('spot-' + cpIdx);
+          if (!cp.done) {
+            let dYaw  = vYaw - cp.yaw;
+            while (dYaw >  180) dYaw -= 360;
+            while (dYaw < -180) dYaw += 360;
+            let dPitch = cp.pitch - vPitch;
 
-          if (spotEl) {
-             if (!(tx < -vw || tx > vw * 2 || ty < -vh || ty > vh * 2)) {
+            let tx = cx + (dYaw   * pxPerDeg);
+            let ty = cy - (dPitch * pxPerDeg);
+
+            // Keep track of offscreen position for arrow
+            if (!cp.sTx) { cp.sTx = tx; cp.sTy = ty; }
+            if (Math.abs(tx - cp.sTx) > 800) { cp.sTx = tx; cp.sTy = ty; }
+            cp.sTx += (tx - cp.sTx) * 0.45;
+            cp.sTy += (ty - cp.sTy) * 0.45;
+
+            if (!(tx < -vw || tx > vw * 2 || ty < -vh || ty > vh * 2)) {
                spotEl.style.display = 'block';
-               
-               if (!cp.sTx) { cp.sTx = tx; cp.sTy = ty; }
-               if (Math.abs(tx - cp.sTx) > 800) { cp.sTx = tx; cp.sTy = ty; }
-               cp.sTx += (tx - cp.sTx) * 0.45;
-               cp.sTy += (ty - cp.sTy) * 0.45;
-               
                spotEl.style.transform = `translate(${cp.sTx - cx}px, ${cp.sTy - cy}px)`;
                
-               closestDist = Math.sqrt(Math.pow(cp.sTx - cx, 2) + Math.pow(cp.sTy - cy, 2));
-             } else {
-               // Update tracking offscreen so arrow continues working
+               let dist = Math.sqrt(Math.pow(cp.sTx - cx, 2) + Math.pow(cp.sTy - cy, 2));
+               if (dist < closestDist) {
+                 closestDist = dist;
+                 closestIdx = i;
+               }
+            } else {
                cp.sTx = tx; cp.sTy = ty;
-             }
+            }
           }
         }
       }
 
+      // Default the target to the closest visible spot, or the first undone if none are visible
+      if (closestIdx !== -1) {
+        currentTarget = closestIdx;
+      } else {
+        currentTarget = checkpoints.findIndex(c => !c.done);
+      }
+      
+      let cpIdx = currentTarget;
+
       arFinder.style.transform = `translate(-50%, -50%) rotate(${vRoll}deg)`;
 
       const ALIGN_RADIUS = 30;
-      const onTarget = (closestDist <= ALIGN_RADIUS);
+      const onTarget = (closestIdx !== -1 && closestDist <= ALIGN_RADIUS);
 
       if (onTarget && cpIdx >= 0 && cpIdx < checkpoints.length) {
         document.getElementById('spot-' + cpIdx).classList.add('active');
