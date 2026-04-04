@@ -964,17 +964,11 @@
 
     function buildCheckpoints() {
       const pts = [];
-      // Center view capture: 15 dots total
-      const yawSteps = [-45, -20, 0, 20, 45]; 
-      const pitchRows = [-25, 0, 25]; 
-      
-      pitchRows.forEach(pitch => {
-        yawSteps.forEach(yaw => {
-          // Normalize yaw to 0-360 range
-          const normalizedYaw = (yaw + 360) % 360;
-          pts.push({ yaw: normalizedYaw, pitch, done: false });
-        });
-      });
+      // Single horizontal row at pitch=0° — full 360° panorama strip
+      // 12 shots every 30° gives full coverage with good overlap
+      for (let yaw = 0; yaw < 360; yaw += 30) {
+        pts.push({ yaw, pitch: 0, done: false });
+      }
       return pts;
     }
 
@@ -1077,22 +1071,18 @@
     const iosGyroBtn = document.getElementById('ios-gyro-btn');
     const staticDotsGrid = document.getElementById('static-dots-grid');
 
-    // Build the static fallback grid (3 rows x 5 cols = 15 dots)
+    // Build the static fallback grid — single horizontal row of 12 dots
     function buildStaticGrid() {
       staticDotsGrid.innerHTML = '';
-      const rows = 3, cols = 5;
-      for (let r = 0; r < rows; r++) {
-        const row = document.createElement('div');
-        row.className = 'static-dot-row';
-        for (let c = 0; c < cols; c++) {
-          const idx = r * cols + c;
-          const dot = document.createElement('div');
-          dot.className = 'static-dot' + (checkpoints[idx] && checkpoints[idx].done ? ' done' : '');
-          dot.id = 'sdot-' + idx;
-          row.appendChild(dot);
-        }
-        staticDotsGrid.appendChild(row);
-      }
+      const row = document.createElement('div');
+      row.className = 'static-dot-row';
+      checkpoints.forEach((cp, idx) => {
+        const dot = document.createElement('div');
+        dot.className = 'static-dot' + (cp.done ? ' done' : '');
+        dot.id = 'sdot-' + idx;
+        row.appendChild(dot);
+      });
+      staticDotsGrid.appendChild(row);
     }
 
     function updateStaticGrid() {
@@ -1410,27 +1400,33 @@
     // ════════════════════════════════════════════════════════════════════════════
 
     const YAW_LABELS = {
-      0: 'straight ahead', 30: 'rotate right 30°', 60: 'rotate right 60°',
-      90: 'to the right', 120: 'rotate right 120°', 150: 'rotate right 150°',
-      180: 'turn behind you', 210: 'rotate left 150°', 240: 'rotate left 120°',
-      270: 'to the left', 300: 'rotate left 60°', 330: 'rotate left 30°',
+      0:   '↑ Face forward',
+      30:  '→ Rotate 30°',
+      60:  '→ Rotate 60°',
+      90:  '→ Rotate 90° (right)',
+      120: '→ Rotate 120°',
+      150: '→ Rotate 150°',
+      180: '↩ Turn around (180°)',
+      210: '← Rotate 210°',
+      240: '← Rotate 240°',
+      270: '← Rotate 270° (left)',
+      300: '← Rotate 300°',
+      330: '← Rotate 330°',
     };
-    const PITCH_LABELS = { '-30': 'tilt down', '0': 'level', '30': 'tilt up' };
 
     function updateDirectionHint() {
       if (currentTarget >= TOTAL_TARGETS || currentTarget < 0) return;
-      
+
       let cp = checkpoints[currentTarget];
       if (!cp || cp.done) {
-        let firstUn = checkpoints.findIndex(c => !c.done);
-        if (firstUn === -1) return;
+        const firstUn = checkpoints.findIndex(c => !c.done);
+        if (firstUn === -1) { dirHint.textContent = '✅ All done!'; return; }
         cp = checkpoints[firstUn];
       }
 
-      const yLbl = YAW_LABELS[cp.yaw]        || `yaw ${cp.yaw}°`;
-      const pLbl = PITCH_LABELS[String(cp.pitch)] || `pitch ${cp.pitch}°`;
-      const rowNum = Math.floor(checkpoints.indexOf(cp) / 12) + 1;
-      dirHint.textContent = `Row ${rowNum}: ${pLbl} — ${yLbl}`;
+      const shotNum = checkpoints.indexOf(cp) + 1;
+      const lbl = YAW_LABELS[cp.yaw] || `Rotate to ${cp.yaw}°`;
+      dirHint.textContent = `Shot ${shotNum}/${TOTAL_TARGETS}: ${lbl}`;
     }
 
     // ════════════════════════════════════════════════════════════════════════════
