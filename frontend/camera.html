@@ -160,13 +160,74 @@
     }
 
     .cam-spot.active {
-      background: #115e59; /* dark green */
-      border: 4px solid #fff;
-      width: 50px;
-      height: 50px;
-      margin-left: -25px;
-      margin-top: -25px;
-      transform: none;
+      background: #22c55e !important;
+      border: 4px solid #fff !important;
+      width: 50px !important;
+      height: 50px !important;
+      margin-left: -25px !important;
+      margin-top: -25px !important;
+      box-shadow: 0 0 16px rgba(34,197,94,0.8) !important;
+    }
+
+    /* iOS gyro permission overlay */
+    #ios-gyro-btn {
+      position: fixed;
+      bottom: 210px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      background: linear-gradient(135deg, #6c63ff, #00d4ff);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 13px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      display: none;
+      box-shadow: 0 6px 24px rgba(108,99,255,0.5);
+      animation: pulseBadge 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulseBadge {
+      0%, 100% { box-shadow: 0 6px 24px rgba(108,99,255,0.5); }
+      50%       { box-shadow: 0 6px 36px rgba(108,99,255,0.9); }
+    }
+
+    /* Static fallback grid (shown when gyro off) */
+    #static-dots-grid {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      display: none;
+      flex-direction: column;
+      gap: 36px;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .static-dot-row {
+      display: flex;
+      gap: 36px;
+      align-items: center;
+    }
+
+    .static-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(234,191,19,0.9);
+      border: 2px solid rgba(255,255,255,0.6);
+      transition: background 0.25s, box-shadow 0.25s, transform 0.15s;
+    }
+
+    .static-dot.done {
+      background: rgba(34,197,94,0.25);
+      border-color: rgba(34,197,94,0.3);
+      transform: scale(0.6);
     }
 
     .ar-finder {
@@ -742,8 +803,14 @@
   </div>
 
 
-  <!-- AR Spots -->
+  <!-- AR Spots (gyro-tracked) -->
   <div id="spots-container"></div>
+
+  <!-- Static fallback grid (shown when gyro unavailable) -->
+  <div id="static-dots-grid"></div>
+
+  <!-- iOS gyro permission button -->
+  <button id="ios-gyro-btn">🔄 Enable Motion for AR Dots</button>
 
   <!-- AR Finder -->
   <div id="ar-finder" class="ar-finder">
@@ -1007,22 +1074,105 @@
     // GYROSCOPE
     // ════════════════════════════════════════════════════════════════════════════
 
-    async function requestGyro() {
-      if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const perm = await DeviceOrientationEvent.requestPermission();
-          if (perm !== 'granted') { gyroNotice.style.display = 'block'; return; }
-        } catch { gyroNotice.style.display = 'block'; return; }
+    const iosGyroBtn = document.getElementById('ios-gyro-btn');
+    const staticDotsGrid = document.getElementById('static-dots-grid');
+
+    // Build the static fallback grid (3 rows x 5 cols = 15 dots)
+    function buildStaticGrid() {
+      staticDotsGrid.innerHTML = '';
+      const rows = 3, cols = 5;
+      for (let r = 0; r < rows; r++) {
+        const row = document.createElement('div');
+        row.className = 'static-dot-row';
+        for (let c = 0; c < cols; c++) {
+          const idx = r * cols + c;
+          const dot = document.createElement('div');
+          dot.className = 'static-dot' + (checkpoints[idx] && checkpoints[idx].done ? ' done' : '');
+          dot.id = 'sdot-' + idx;
+          row.appendChild(dot);
+        }
+        staticDotsGrid.appendChild(row);
       }
+    }
+
+    function updateStaticGrid() {
+      checkpoints.forEach((cp, i) => {
+        const el = document.getElementById('sdot-' + i);
+        if (!el) return;
+        if (cp.done) {
+          el.classList.add('done');
+        } else {
+          el.classList.remove('done');
+          // Highlight the current target
+          el.style.background = (i === currentTarget)
+            ? 'rgba(255,255,255,1)'
+            : 'rgba(234,191,19,0.9)';
+          el.style.boxShadow = (i === currentTarget)
+            ? '0 0 12px 4px rgba(255,255,255,0.7)'
+            : '';
+        }
+      });
+    }
+
+    function showStaticFallback() {
+      staticDotsGrid.style.display = 'flex';
+      buildStaticGrid();
+      // Advance target on manual capture button tap
+      btnCapture.style.display = 'block';
+    }
+
+    function hideStaticFallback() {
+      staticDotsGrid.style.display = 'none';
+    }
+
+    async function requestGyro() {
+      const hasPermissionAPI = typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function';
+
+      if (hasPermissionAPI) {
+        // iOS 13+: requestPermission MUST be called from a user gesture.
+        // Show a button to trigger it.
+        iosGyroBtn.style.display = 'block';
+        return; // Wait for the button click
+      }
+
+      // Non-iOS: attach listener directly
       window.addEventListener('deviceorientation', onOrientation, true);
       requestAnimationFrame(renderLoop);
     }
 
+    async function grantIOSGyro() {
+      iosGyroBtn.style.display = 'none';
+      try {
+        const perm = await DeviceOrientationEvent.requestPermission();
+        if (perm === 'granted') {
+          window.addEventListener('deviceorientation', onOrientation, true);
+          requestAnimationFrame(renderLoop);
+          hideStaticFallback();
+          gyroNotice.style.display = 'none';
+        } else {
+          gyroNotice.style.display = 'block';
+          showStaticFallback();
+        }
+      } catch (err) {
+        console.warn('iOS gyro permission error:', err);
+        gyroNotice.style.display = 'block';
+        showStaticFallback();
+      }
+    }
+
+    iosGyroBtn.addEventListener('click', grantIOSGyro);
+
     function onOrientation(e) {
-      if (e.alpha === null) { gyroNotice.style.display = 'block'; return; }
-      gyroActive = true;
-      gyroNotice.style.display = 'none';
+      if (e.alpha === null) {
+        if (!gyroActive) { gyroNotice.style.display = 'block'; showStaticFallback(); }
+        return;
+      }
+      if (!gyroActive) {
+        gyroActive = true;
+        gyroNotice.style.display = 'none';
+        hideStaticFallback();
+      }
       devAlpha = e.alpha || 0;
       devBeta  = e.beta  || 0;
       devGamma = e.gamma || 0;
@@ -1178,7 +1328,10 @@
       }
     }
 
-    setInterval(() => { if (gyroActive) checkAngle(); }, 50);
+    setInterval(() => {
+      if (gyroActive) checkAngle();
+      else updateStaticGrid(); // keep static grid in sync
+    }, 100);
 
     function cancelHold() {
       holdStart = null;
