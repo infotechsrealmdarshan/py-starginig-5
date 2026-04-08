@@ -3,29 +3,12 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>360° Viewer</title>
-  <meta name="description" content="Immersive 360-degree panorama viewer powered by Three.js & Photo Sphere Viewer" />
-
-  <!-- Google Fonts -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>360° Capture</title>
+  <meta name="description" content="Guided 360° panorama capture with gyroscope checkpoints." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-
-  <!-- Photo Sphere Viewer v5 CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.min.css" />
-
-  <!--
-    Import Map — maps bare specifiers to CDN ESM URLs.
-  -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three":                        "https://cdn.jsdelivr.net/npm/three@0.161/build/three.module.js",
-      "@photo-sphere-viewer/core":    "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core@5/index.module.js"
-    }
-  }
-  </script>
 
   <style>
     *,
@@ -37,147 +20,502 @@
     }
 
     :root {
-      --clr-bg: #0a0c12;
-      --clr-surface: #12151f;
-      --clr-glass: rgba(255, 255, 255, 0.05);
-      --clr-border: rgba(255, 255, 255, 0.08);
-      --clr-accent: #6c63ff;
-      --clr-accent2: #00d4ff;
-      --clr-text: #e8eaf0;
-      --clr-muted: #6b7280;
-      --clr-success: #22c55e;
-      --clr-error: #ef4444;
-      --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      --bg: #07090f;
+      --surface: #0f1219;
+      --glass: rgba(255, 255, 255, 0.06);
+      --border: rgba(255, 255, 255, 0.09);
+      --accent: #6c63ff;
+      --accent2: #00d4ff;
+      --green: #22c55e;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     html,
     body {
       height: 100%;
-      font-family: 'Inter', system-ui, sans-serif;
-      background: var(--clr-bg);
-      color: var(--clr-text);
       overflow: hidden;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #000;
+      color: var(--text);
+      -webkit-user-select: none;
+      user-select: none;
     }
 
-    .app {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      height: 100vh;
+    #camera-feed {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      background: #000;
     }
 
-    header {
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .overlay>* {
+      pointer-events: auto;
+    }
+
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 24px;
-      background: rgba(10, 12, 18, 0.85);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--clr-border);
-      z-index: 100;
-      gap: 16px;
+      padding: 14px 18px;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
     }
 
-    .logo {
+    .top-left {
       display: flex;
       align-items: center;
       gap: 10px;
     }
 
-    .logo-icon {
+    .btn-back {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 7px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .btn-back:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .session-pill {
+      background: rgba(108, 99, 255, 0.25);
+      border: 1px solid rgba(108, 99, 255, 0.45);
+      color: #c4c0ff;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .counter-badge {
+      display: none;
+    }
+
+    /* Hide old counter */
+
+    .btn-flip {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      border-radius: 50%;
       width: 38px;
       height: 38px;
-      background: linear-gradient(135deg, var(--clr-accent), var(--clr-accent2));
-      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 18px;
-      box-shadow: 0 0 18px rgba(108, 99, 255, 0.5);
-      animation: pulse-glow 3s ease-in-out infinite;
-    }
-
-    @keyframes pulse-glow {
-
-      0%,
-      100% {
-        box-shadow: 0 0 18px rgba(108, 99, 255, 0.5);
-      }
-
-      50% {
-        box-shadow: 0 0 32px rgba(0, 212, 255, 0.6);
-      }
-    }
-
-    .logo-text h1 {
-      font-size: 17px;
-      font-weight: 700;
-      background: linear-gradient(90deg, var(--clr-accent), var(--clr-accent2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .logo-text span {
-      font-size: 11px;
-      color: var(--clr-muted);
-      display: block;
-      margin-top: 1px;
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 8px 16px;
-      border-radius: 9px;
-      font-size: 13px;
-      font-weight: 500;
-      font-family: inherit;
       cursor: pointer;
-      border: none;
-      transition: var(--transition);
-      white-space: nowrap;
+      transition: background 0.2s;
     }
 
-    .btn-ghost {
-      background: var(--clr-glass);
-      color: var(--clr-text);
-      border: 1px solid var(--clr-border);
+    .btn-flip:hover {
+      background: rgba(255, 255, 255, 0.22);
     }
 
-    .btn-ghost:hover {
-      background: rgba(255, 255, 255, 0.1);
-      transform: translateY(-1px);
-    }
-
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none !important;
-    }
-
-    .btn .spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-top-color: #fff;
+    .cam-spot {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      margin-top: -14px;
       border-radius: 50%;
-      animation: spin 0.6s linear infinite;
+      background: rgba(234, 191, 19, 0.85);
+      /* yellow */
+      border: none;
+      z-index: 11;
+      pointer-events: none;
+      display: none;
+      transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+      overflow: hidden;
+    }
+
+    .cam-spot .thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
       display: none;
     }
 
-    .btn.loading .spinner {
+    .cam-spot.done {
+      width: 100px !important;
+      height: 100px !important;
+      margin-left: -50px !important;
+      margin-top: -50px !important;
+      background: #22c55e;
+      border: 3px solid #fff;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      z-index: 20;
+    }
+
+    .cam-spot.done .thumb {
       display: block;
     }
 
-    .btn.loading .btn-label {
+    .cam-spot.active {
+      background: #22c55e !important;
+      border: 4px solid #fff !important;
+      width: 50px !important;
+      height: 50px !important;
+      margin-left: -25px !important;
+      margin-top: -25px !important;
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.8) !important;
+    }
+
+    /* iOS gyro permission overlay */
+    #ios-gyro-btn {
+      position: fixed;
+      bottom: 210px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      background: linear-gradient(135deg, #6c63ff, #00d4ff);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 13px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      display: none;
+      box-shadow: 0 6px 24px rgba(108, 99, 255, 0.5);
+      animation: pulseBadge 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulseBadge {
+
+      0%,
+      100% {
+        box-shadow: 0 6px 24px rgba(108, 99, 255, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 6px 36px rgba(108, 99, 255, 0.9);
+      }
+    }
+
+    /* Static fallback grid (shown when gyro off) */
+    #static-dots-grid {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      display: none;
+      flex-direction: column;
+      gap: 36px;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .static-dot-row {
+      display: flex;
+      gap: 36px;
+      align-items: center;
+    }
+
+    .static-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(234, 191, 19, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      transition: background 0.25s, box-shadow 0.25s, transform 0.15s;
+    }
+
+    .static-dot.done {
+      background: rgba(34, 197, 94, 0.25);
+      border-color: rgba(34, 197, 94, 0.3);
+      transform: scale(0.6);
+    }
+
+    .ar-finder {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 3px solid var(--green);
+      background-color: transparent;
+      transform: translate(-50%, -50%);
+      z-index: 12;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ar-finder::before,
+    .ar-finder::after {
+      content: '';
+      position: absolute;
+      background-color: var(--green);
+    }
+
+    .ar-finder::before {
+      width: 24px;
+      height: 3px;
+    }
+
+    .ar-finder::after {
+      width: 3px;
+      height: 24px;
+    }
+
+    .ar-arrow {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      margin-top: -14px;
+      margin-left: -14px;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      filter: drop-shadow(0px 2px 5px rgba(0, 0, 0, 0.4));
+    }
+
+    .ar-arrow svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .ar-arrow.show {
+      display: block;
+    }
+
+    /* Removed hold text and ring since we auto capture dynamically without visual delay or use the ring differently */
+    .hold-text {
+      display: none;
+    }
+
+    .hold-ring-svg {
+      display: none;
+    }
+
+    .minimap {
+      position: fixed;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 15;
+    }
+
+    .minimap-row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .minimap-row:nth-child(2) {
+      margin-left: 12px;
+    }
+
+    .minimap-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--green);
+      transition: background-color 0.3s, box-shadow 0.3s, opacity 0.3s;
+    }
+
+    .minimap-dot.done {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .minimap-dot.target {
+      background-color: white;
+      box-shadow: 0 0 8px white;
+      opacity: 1;
+    }
+
+    #gyro-display {
+      position: fixed;
+      top: 80px;
+      left: 18px;
+      z-index: 20;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      backdrop-filter: blur(6px);
+      pointer-events: none;
+      line-height: 1.8;
+    }
+
+    #gyro-display span {
+      color: var(--accent2);
+      font-weight: 600;
+    }
+
+    #flash {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: #fff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.08s;
+    }
+
+    #flash.on {
+      opacity: 0.85;
+    }
+
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 24px 36px;
+      gap: 20px;
+      /* Remove bottom gradient for a cleaner look */
+    }
+
+    .progress-row {
+      display: none;
+    }
+
+    /* Replaced by top pill */
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      width: 100%;
+    }
+
+    .btn-capture {
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: #eab308;
+      /* solid yellow */
+      border: 6px solid #fff;
+      cursor: pointer;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      transition: transform 0.15s, opacity 0.1s;
+      flex-shrink: 0;
+    }
+
+    .btn-capture:active {
+      transform: scale(0.92);
+    }
+
+    .btn-capture.capturing {
+      opacity: 0.6;
+    }
+
+    .btn-bottom {
+      border-radius: 30px;
+      padding: 14px 24px;
+      font-size: 14px;
+      font-weight: 800;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-recenter {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-done {
+      background: var(--green);
+      color: #000;
+      min-width: 100px;
+    }
+
+    .btn-done:disabled {
+      background: rgba(34, 197, 94, 0.4);
+      color: rgba(0, 0, 0, 0.5);
+      cursor: not-allowed;
+    }
+
+    .btn-clear {
+      background: rgba(239, 68, 68, 0.6);
+      /* red */
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2.5px solid rgba(0, 0, 0, 0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+    }
+
+    .btn-done.loading .spinner {
+      display: block;
+    }
+
+    .btn-done.loading .btn-label {
       display: none;
     }
 
@@ -187,188 +525,34 @@
       }
     }
 
-    .viewer-wrap {
-      position: relative;
-      overflow: hidden;
-      background: #000;
-    }
-
-    #viewer {
-      width: 100%;
-      height: 100%;
-    }
-
-    @keyframes progressSlide {
-      0%   { transform: translateX(-100%); }
-      50%  { transform: translateX(200%); }
-      100% { transform: translateX(200%); }
-    }
-
-    .empty-state {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 18px;
-      background: radial-gradient(ellipse at center, #12151f 0%, #0a0c12 100%);
-      z-index: 10;
-    }
-
-    .empty-icon {
-      width: 90px;
-      height: 90px;
-      background: linear-gradient(135deg, rgba(108, 99, 255, 0.2), rgba(0, 212, 255, 0.2));
-      border: 1px solid rgba(108, 99, 255, 0.3);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 38px;
-      animation: float 4s ease-in-out infinite;
-    }
-
-    @keyframes float {
-
-      0%,
-      100% {
-        transform: translateY(0);
-      }
-
-      50% {
-        transform: translateY(-10px);
-      }
-    }
-
-    .empty-state h2 {
-      font-size: 22px;
-      font-weight: 600;
-      color: var(--clr-text);
-    }
-
-    .empty-state p {
-      font-size: 14px;
-      color: var(--clr-muted);
-      max-width: 320px;
-      text-align: center;
-      line-height: 1.6;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--clr-accent), #5a52e0);
-      color: #fff;
-      box-shadow: 0 4px 15px rgba(108, 99, 255, 0.35);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(108, 99, 255, 0.5);
-    }
-
-    footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 24px;
-      background: rgba(10, 12, 18, 0.9);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-top: 1px solid var(--clr-border);
-      z-index: 100;
-      gap: 12px;
-    }
-
-    .status-badge {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 12px;
-      color: var(--clr-muted);
-    }
-
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--clr-muted);
-      flex-shrink: 0;
-      transition: background var(--transition), box-shadow var(--transition);
-    }
-
-    .status-dot.ok {
-      background: var(--clr-success);
-      box-shadow: 0 0 6px var(--clr-success);
-    }
-
-    .status-dot.error {
-      background: var(--clr-error);
-      box-shadow: 0 0 6px var(--clr-error);
-    }
-
-    .status-dot.loading {
-      background: var(--clr-accent2);
-      animation: blink 0.8s ease-in-out infinite;
-    }
-
-    @keyframes blink {
-
-      0%,
-      100% {
-        opacity: 1;
-      }
-
-      50% {
-        opacity: 0.2;
-      }
-    }
-
-    .tips {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      font-size: 11px;
-      color: var(--clr-muted);
-    }
-
-    .tip {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .key {
-      display: inline-block;
-      padding: 1px 6px;
-      border: 1px solid var(--clr-border);
-      border-radius: 4px;
-      font-size: 10px;
-      background: var(--clr-glass);
-    }
-
-    .img-count {
+    .btn-import {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 11px;
-      color: var(--clr-muted);
-      background: var(--clr-glass);
-      border: 1px solid var(--clr-border);
-      border-radius: 6px;
-      padding: 3px 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
     }
 
-    .img-count strong {
-      color: var(--clr-accent2);
+    .btn-import:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: translateY(-1px);
     }
 
     #toast {
       position: fixed;
-      bottom: 70px;
+      bottom: 140px;
       left: 50%;
       transform: translateX(-50%) translateY(20px);
-      background: var(--clr-surface);
-      border: 1px solid var(--clr-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px 20px;
       font-size: 13px;
@@ -376,8 +560,8 @@
       opacity: 0;
       transition: opacity 0.3s, transform 0.3s;
       pointer-events: none;
-      z-index: 9999;
-      max-width: 360px;
+      z-index: 100;
+      max-width: 300px;
       text-align: center;
     }
 
@@ -388,305 +572,1234 @@
 
     #toast.success {
       border-color: rgba(34, 197, 94, 0.4);
-      color: var(--clr-success);
+      color: var(--green);
     }
 
     #toast.error {
       border-color: rgba(239, 68, 68, 0.4);
-      color: var(--clr-error);
+      color: var(--red);
     }
 
-    @media (max-width: 600px) {
+    #toast.info {
+      border-color: rgba(0, 212, 255, 0.3);
+      color: var(--accent2);
+    }
 
-      .tips,
-      .img-count {
-        display: none;
+    #no-camera {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 9, 15, 0.92);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .cam-permission-card {
+      background: linear-gradient(160deg, #13172a 0%, #0d1020 100%);
+      border: 1px solid rgba(108, 99, 255, 0.25);
+      border-radius: 28px;
+      padding: 36px 28px 32px;
+      max-width: 340px;
+      width: 100%;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04),
+        0 40px 80px rgba(0, 0, 0, 0.6),
+        0 0 60px rgba(108, 99, 255, 0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      animation: cardIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    @keyframes cardIn {
+      from {
+        transform: scale(0.82) translateY(30px);
+        opacity: 0;
       }
 
-      header {
-        padding: 10px 14px;
-      }
-
-      footer {
-        padding: 8px 14px;
+      to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
       }
     }
+
+    .cam-icon-wrap {
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(108, 99, 255, 0.2), rgba(0, 212, 255, 0.1));
+      border: 1.5px solid rgba(108, 99, 255, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 22px;
+      position: relative;
+      box-shadow: 0 0 30px rgba(108, 99, 255, 0.2);
+    }
+
+    .cam-icon-wrap::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 1px solid rgba(108, 99, 255, 0.15);
+      animation: pulseRing 2s ease-out infinite;
+    }
+
+    .cam-icon-wrap::after {
+      content: '';
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      border: 1px solid rgba(108, 99, 255, 0.08);
+      animation: pulseRing 2s ease-out 0.4s infinite;
+    }
+
+    @keyframes pulseRing {
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1.25);
+        opacity: 0;
+      }
+    }
+
+    .cam-icon-wrap svg {
+      width: 38px;
+      height: 38px;
+      color: var(--accent2);
+    }
+
+    .cam-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(108, 99, 255, 0.15);
+      border: 1px solid rgba(108, 99, 255, 0.3);
+      color: #c4c0ff;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .cam-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    #no-camera h2 {
+      font-size: 21px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, #c4c0ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+      line-height: 1.25;
+    }
+
+    #no-camera p {
+      font-size: 13.5px;
+      color: var(--muted);
+      max-width: 260px;
+      line-height: 1.75;
+      margin-bottom: 28px;
+    }
+
+    .btn-request-cam {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent) 0%, #5a52e0 100%);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 15px 26px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(108, 99, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      transition: transform 0.18s, box-shadow 0.18s;
+      letter-spacing: 0.2px;
+    }
+
+    .btn-request-cam:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(108, 99, 255, 0.6);
+    }
+
+    .btn-request-cam:active {
+      transform: translateY(0);
+    }
+
+    .cam-note {
+      margin-top: 16px;
+      font-size: 11.5px;
+      color: rgba(107, 114, 128, 0.8);
+      line-height: 1.6;
+    }
+
+    .cam-note span {
+      color: rgba(164, 167, 180, 0.7);
+    }
+
+    #canvas {
+      display: none;
+    }
+
+    #gyro-notice {
+      position: fixed;
+      top: 80px;
+      right: 18px;
+      z-index: 20;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 11px;
+      color: var(--orange);
+      pointer-events: none;
+      display: none;
+      max-width: 170px;
+      line-height: 1.5;
+    }
+
+    #finish-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      text-align: center;
+      padding: 32px;
+      background: rgba(7, 9, 15, 0.97);
+      backdrop-filter: blur(20px);
+    }
+
+    #finish-screen .finish-icon {
+      font-size: 70px;
+      animation: pop 0.5s var(--ease) both;
+    }
+
+    @keyframes pop {
+      0% {
+        transform: scale(0);
+        opacity: 0;
+      }
+
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    #finish-screen h2 {
+      font-size: 26px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--text), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #finish-screen p {
+      font-size: 14px;
+      color: var(--muted);
+      max-width: 280px;
+      line-height: 1.7;
+    }
+
+    .finish-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-finish-stitch {
+      background: linear-gradient(135deg, var(--accent), #5a52e0);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 13px 26px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow: 0 6px 22px rgba(108, 99, 255, 0.45);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-finish-stitch:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(108, 99, 255, 0.6);
+    }
+
+    .btn-finish-stitch .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2.5px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+    }
+
+    .btn-finish-stitch.loading .spinner {
+      display: inline-block;
+    }
+
+    .btn-finish-stitch.loading .btn-label {
+      display: none;
+    }
+
+    .btn-finish-more {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 13px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-finish-more:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    #import-input {
+      display: none;
+    }
+
+    .top-progress-container {
+      position: fixed;
+      top: 60px;
+      left: 0;
+      right: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      z-index: 20;
+    }
+
+    .progress-pill {
+      background: #000;
+      border-radius: 40px;
+      padding: 10px 30px;
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    }
+
+    .progress-pill .num {
+      color: var(--green);
+    }
+
+    #direction-hint {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+    }
+
+    #layer-badge {
+      font-size: 13px;
+      font-weight: 700;
+      padding: 5px 16px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      backdrop-filter: blur(6px);
+    }
+    #layer-badge.top    { background: rgba(239,68,68,0.22);  color: #f87171; border: 1px solid rgba(239,68,68,0.4); }
+    #layer-badge.center { background: rgba(34,197,94,0.22);  color: #4ade80; border: 1px solid rgba(34,197,94,0.4); }
+    #layer-badge.bottom { background: rgba(59,130,246,0.22); color: #60a5fa; border: 1px solid rgba(59,130,246,0.4); }
   </style>
 </head>
 
 <body>
 
-  <div class="app">
+  <!-- Hidden canvas for frame capture -->
+  <canvas id="canvas"></canvas>
 
-    <!-- ── Header ────────────────────────────────────────────────── -->
-    <header>
-      <div class="logo">
-        <a href="index.html" id="btn-home"
-          style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;margin-right:10px;padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);font-size:13px;transition:background 0.2s"
-          onmouseover="this.style.background='rgba(255,255,255,0.1)'"
-          onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-          ← Home
-        </a>
-        <div class="logo-icon">🌐</div>
-        <div class="logo-text">
-          <h1 id="page-title">360° Viewer</h1>
-          <span>Three.js · Photo Sphere Viewer · Immersive Experience</span>
-        </div>
+  <!-- Camera video feed -->
+  <video id="camera-feed" autoplay playsinline muted></video>
+
+  <!-- Flash effect -->
+  <div id="flash"></div>
+
+  <!-- No camera / permission state -->
+  <div id="no-camera">
+    <div class="cam-permission-card">
+      <div class="cam-icon-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
       </div>
-
-      <div class="header-actions">
-        <button class="btn btn-ghost" id="btn-fullscreen" title="Toggle Fullscreen">
-          <span>⛶</span>
-          <span class="btn-label">Fullscreen</span>
-        </button>
+      <div class="cam-badge">
+        <span class="cam-badge-dot"></span>
+        Permission Required
       </div>
-    </header>
-
-    <!-- ── Viewer ─────────────────────────────────────────────────── -->
-    <div class="viewer-wrap">
-      <div id="viewer"></div>
-
-      <div class="empty-state" id="empty-state" style="display:none">
-        <div class="empty-icon">🏔️</div>
-        <h2>No Panorama Yet</h2>
-        <p>Go back and capture photos, then stitch to generate your 360° panorama.</p>
-        <a id="btn-go-capture" href="index.html" class="btn btn-primary" style="text-decoration:none;margin-top:8px">📷
-          Go to Camera</a>
-      </div>
-
-      <!-- Stitching progress state -->
-      <div class="empty-state" id="stitching-state" style="display:none">
-        <div style="font-size:56px;animation:float 2s ease-in-out infinite">⚙️</div>
-        <h2>Stitching Panorama…</h2>
-        <p id="stitch-progress-msg">Processing your images. This may take a minute.</p>
-        <div style="width:200px;height:4px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;margin-top:8px">
-          <div id="progress-bar" style="height:100%;width:30%;background:linear-gradient(90deg,#6c63ff,#00d4ff);border-radius:4px;animation:progressSlide 1.4s ease-in-out infinite"></div>
-        </div>
+      <h2>Camera Access Needed</h2>
+      <p>Allow camera access to capture your 360° panorama. Tap below and accept the browser prompt.</p>
+      <button class="btn-request-cam" id="btn-request-cam">📷 Allow Camera</button>
+      <div class="cam-note">
+        Your camera is only used locally —<br>
+        <span>no video is recorded or stored.</span>
       </div>
     </div>
-
-    <!-- ── Footer ────────────────────────────────────────────────── -->
-    <footer>
-      <div class="status-badge">
-        <div class="status-dot" id="status-dot"></div>
-        <span id="status-text">Loading…</span>
-      </div>
-
-      <div class="img-count" id="img-count" style="display:none">
-        <span>📷</span>
-        <span><strong id="img-count-num">0</strong> captures</span>
-      </div>
-
-      <div class="tips">
-        <div class="tip"><span class="key">Drag</span> Look around</div>
-        <div class="tip"><span class="key">Scroll</span> Zoom</div>
-        <div class="tip"><span class="key">Dbl-click</span> Zoom in</div>
-      </div>
-    </footer>
-
   </div>
 
-  <!-- Toast notification -->
+
+  <!-- AR Spots (gyro-tracked) -->
+  <div id="spots-container"></div>
+
+  <!-- Static fallback grid (shown when gyro unavailable) -->
+  <div id="static-dots-grid"></div>
+
+  <!-- iOS gyro permission button -->
+  <button id="ios-gyro-btn">🔄 Enable Motion for AR Dots</button>
+
+  <!-- AR Finder -->
+  <div id="ar-finder" class="ar-finder">
+    <div class="hold-text"></div>
+    <svg class="hold-ring-svg" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#22c55e" stroke-width="8" stroke-dasharray="289"
+        stroke-dashoffset="289" id="hold-ring-progress" />
+    </svg>
+  </div>
+
+  <!-- Arrow indicator -->
+  <div id="ar-arrow" class="ar-arrow">
+    <svg viewBox="0 0 24 24" fill="white">
+      <path d="M5 3L19 12L5 21V3Z" />
+    </svg>
+  </div>
+
+  <!-- Gyro angle debug display -->
+  <div id="gyro-display">
+    α <span id="g-alpha">—</span>°
+    &nbsp;β <span id="g-beta">—</span>°
+    &nbsp;γ <span id="g-gamma">—</span>°
+  </div>
+
+  <!-- Gyro unavailable notice -->
+  <div id="gyro-notice">⚠️ Gyroscope not detected.<br>Tap shutter manually.</div>
+
+  <!-- Top Progress and Hint -->
+  <div class="top-progress-container">
+    <div class="progress-pill">
+      PROGRESS: <span class="num" id="progress-label">0 / 10</span>
+    </div>
+    <div id="layer-badge" class="center">🎯 CENTER LAYER</div>
+    <div id="direction-hint">Point camera forward to begin</div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="top-left">
+      <a class="btn-back" href="index.html">← Home</a>
+      <div class="session-pill" id="session-name">Loading…</div>
+    </div>
+    <div class="top-right">
+      <div class="counter-badge">
+        📷 <span class="num" id="captured-count">0</span>
+      </div>
+      <button class="btn-flip" id="btn-flip" title="Flip Camera">🔄</button>
+    </div>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="bottom-bar">
+    <button class="btn-capture" id="btn-capture" title="Capture photo"></button>
+    <div class="action-row">
+      <button class="btn-bottom btn-recenter" id="btn-recenter">Re-center</button>
+      <button class="btn-bottom btn-done" id="btn-done" disabled>
+        <div class="spinner"></div>
+        <span class="btn-label">Done</span>
+      </button>
+      <button class="btn-bottom btn-clear" id="btn-clear">Clear</button>
+    </div>
+  </div>
+
+  <!-- Import file input (hidden) -->
+  <input type="file" id="import-input" accept="image/*" />
+
+  <!-- Toast -->
   <div id="toast"></div>
 
+  <!-- Finish screen -->
+  <div id="finish-screen">
+    <div class="finish-icon">🎉</div>
+    <h2>Capture Done! 🎉</h2>
+    <p id="finish-msg">You've captured all 10 photos. Ready to stitch your 360° panorama!</p>
+    <div class="finish-actions">
+      <button class="btn-finish-stitch" id="btn-finish-stitch">
+        <span class="spinner"></span>
+        <span class="btn-label">🔗 Create Panorama</span>
+      </button>
+      <button class="btn-finish-more" id="btn-finish-more">📷 Add More</button>
+    </div>
+  </div>
+
   <script src="config.js"></script>
-  <script type="module">
-    import { Viewer } from '@photo-sphere-viewer/core';
-
-    // ── DOM refs ─────────────────────────────────────────────────────
-    const dot = document.getElementById('status-dot');
-    const statusTxt = document.getElementById('status-text');
-    const toast = document.getElementById('toast');
-    const emptyState = document.getElementById('empty-state');
-    const imgCountWrap = document.getElementById('img-count');
-    const imgCountNum = document.getElementById('img-count-num');
-    const pageTitle = document.getElementById('page-title');
-
-    // ── Read session from URL or fallback to sessionStorage ─────────────
-    let SESSION_ID = new URLSearchParams(location.search).get('session') || sessionStorage.getItem('active_session');
-
-    // If it was lost in a cleanUrl redirect, put it back in the URL without reloading
-    if (SESSION_ID && !location.search.includes('session=')) {
-      window.history.replaceState({}, '', `?session=${SESSION_ID}`);
-    }
-
-    // config.js must be loaded before this module; access via window
+  <script>
+    // ── API helper ────────────────────────────────────────────────────────────
     function api(path, opts = {}) {
       opts.headers = { ...opts.headers, 'Bypass-Tunnel-Reminder': 'true' };
       return fetch(API_BASE + path, opts);
     }
 
-    // ── Status helper ─────────────────────────────────────────────────
-    function setStatus(msg, type = '') {
-      statusTxt.textContent = msg;
-      dot.className = 'status-dot' + (type ? ' ' + type : '');
+    // ── Read session ID from URL query string ─────────────────────────────────
+    let SESSION_ID = new URLSearchParams(location.search).get('session');
+    let isNewSession = false;
+
+    if (!SESSION_ID) {
+      // Create a local session ID if navigating directly to camera without query param
+      SESSION_ID = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+      isNewSession = true;
+      // Replace URL string so refresh doesn't wipe progress
+      window.history.replaceState({}, '', `?session=${SESSION_ID}`);
+
+      document.getElementById('session-name').textContent = 'New Session';
     }
 
-    // ── Toast helper ──────────────────────────────────────────────────
-    let toastTimer;
-    function showToast(msg, type = '') {
-      toast.textContent = msg;
-      toast.className = 'show ' + type;
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { toast.className = ''; }, 3500);
-    }
+    // Update page title
+    document.title = `360° Capture`;
 
-    // ── Viewer ────────────────────────────────────────────────────────
-    let viewer = null;
+    // ── Load session info from API ─────────────────────────────────────────────
+    let capturedCount = 0;
 
-    function initViewer(panorama) {
-      if (viewer) { viewer.destroy(); viewer = null; }
-      viewer = new Viewer({
-        container: document.querySelector('#viewer'),
-        panorama,
-        defaultYaw: 0,
-        defaultPitch: 0,
-        defaultZoomLvl: 50,
-        touchmoveTwoFingers: false,
-        navbar: ['autorotate', 'zoom', 'move', 'download', 'fullscreen'],
-        autorotateDelay: 3000,
-        loadingText: 'Loading 360° panorama…',
-      });
-      viewer.addEventListener('ready', () => {
-        setStatus('Panorama loaded — drag to explore', 'ok');
-        if (emptyState) emptyState.style.display = 'none';
-      });
-      viewer.addEventListener('position-updated', ({ position }) => {
-        const yaw = (position.yaw * 180 / Math.PI).toFixed(1);
-        const pitch = (position.pitch * 180 / Math.PI).toFixed(1);
-        setStatus(`Yaw: ${yaw}°  ·  Pitch: ${pitch}°`, 'ok');
-      });
-    }
-
-    // ── Fetch captures count ──────────────────────────────────────────
-    async function fetchImageCount() {
-      if (!SESSION_ID) return;
-      try {
-        const res = await api(`/api/captures-count/${SESSION_ID}`);
-        const data = await res.json();
-        if (data.count > 0) {
-          imgCountNum.textContent = data.count;
-          imgCountWrap.style.display = 'flex';
-        }
-      } catch (_) { /* fail silently */ }
-    }
-
-    // ── Poll stitch status until done ────────────────────────────────
-    let pollTimer = null;
-    let pollCount = 0;
-
-    function stopPolling() {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    }
-
-    async function pollStatus() {
-      if (!SESSION_ID) return;
-      try {
-        const res = await api(`/api/stitch-status/${SESSION_ID}`);
-        if (!res.ok) {
-          // Session not found on backend yet — keep waiting (auto-created sessions may not
-          // be registered in sessions.json until first upload completes)
-          if (res.status === 404) {
-            document.getElementById('stitch-progress-msg').textContent =
-              'Waiting for session to register…';
-            return;
-          }
-          stopPolling();
-          setStatus('Status check failed', 'error');
-          return;
-        }
-        const data = await res.json();
-        pollCount++;
-
-        if (data.status === 'done' && data.panorama_url) {
-          stopPolling();
-          document.getElementById('stitching-state').style.display = 'none';
-          setStatus('Loading panorama…', 'loading');
-          initViewer(API_BASE + data.panorama_url);
-          fetchImageCount();
-        } else if (data.status === 'error') {
-          stopPolling();
-          document.getElementById('stitching-state').style.display = 'none';
-          document.getElementById('empty-state').style.display = 'flex';
-          setStatus('Stitching failed — try again', 'error');
-          showToast('❌ Stitching failed. Add more photos.', 'error');
-        } else {
-          // still running / pending
-          const dots = '.'.repeat((pollCount % 3) + 1);
-          document.getElementById('stitch-progress-msg').textContent =
-            `Processing images${dots} (${pollCount * 2.5 | 0}s elapsed)`;
-          setStatus('Stitching in progress…', 'loading');
-        }
-      } catch (err) {
-        // Network error — keep trying
-        console.warn('Poll error:', err.message);
-      }
-    }
-
-    // ── Load session info and init viewer ─────────────────────────────
-    async function init() {
-      if (!SESSION_ID) {
-        setStatus('No session specified', 'error');
-        emptyState.style.display = 'flex';
-        return;
-      }
-
-      setStatus('Loading session…', 'loading');
+    async function loadSession() {
+      if (isNewSession) return; // Wait until first photo
 
       try {
         const res = await api(`/api/session/${SESSION_ID}`);
         const data = await res.json();
-
+        // Just fail silently and let it be a new session if the backend doesn't know about it yet
         if (!data.success) {
-          // Session might not be in DB yet (auto-created during capture).
-          // Check stitch-status anyway to see if panorama exists on disk.
-          document.getElementById('stitching-state').style.display = 'flex';
-          setStatus('Session loading…', 'loading');
-          pollTimer = setInterval(pollStatus, 2500);
-          pollStatus();
+          isNewSession = true;
+          document.getElementById('session-name').textContent = 'New Session';
           return;
         }
 
-        pageTitle.textContent = `360° ${data.name}`;
-        document.title = `360° Viewer — ${data.name}`;
+        document.getElementById('session-name').textContent = data.name;
+        document.title = `360° Capture — ${data.name}`;
+        capturedCount = data.capture_count || 0;
+        currentLayerIdx = 0; // CENTER only mode
 
-        // Update "Go to Camera" link
-        const btnGoCapture = document.getElementById('btn-go-capture');
-        btnGoCapture.href = `#`;
-        btnGoCapture.onclick = (e) => {
-          e.preventDefault();
-          sessionStorage.setItem('active_session', SESSION_ID);
-          location.href = `camera.html?session=${SESSION_ID}`;
-        };
-
-        if (data.panorama_url) {
-          // Panorama already exists — load directly
-          setStatus('Loading panorama…', 'loading');
-          initViewer(API_BASE + data.panorama_url);
-          fetchImageCount();
-        } else {
-          // No panorama yet — check if stitch is in progress
-          document.getElementById('stitching-state').style.display = 'flex';
-          setStatus('Checking stitch status…', 'loading');
-          // Start polling
-          pollTimer = setInterval(pollStatus, 2500);
-          pollStatus();
+        // Mark already-captured checkpoints
+        if (capturedCount > 0) {
+          let n = Math.min(capturedCount, TOTAL_TARGETS);
+          for (let i = 0; i < n; i++) { checkpoints[i].done = true; }
+          for (let i = 0; i < TOTAL_TARGETS; i++) {
+            if (!checkpoints[i].done) { currentTarget = i; break; }
+          }
+          buildGrid();
+          updateProgress();
+          updateDirectionHint();
+          if (n >= TOTAL_TARGETS) showFinish();
         }
       } catch (e) {
-        setStatus('Error: ' + e.message, 'error');
-        emptyState.style.display = 'flex';
+        document.getElementById('session-name').textContent = 'Error';
       }
     }
 
-    init();
+    // ════════════════════════════════════════════════════════════════════════════
+    //  360° Guided Capture — Main Script
+    // ════════════════════════════════════════════════════════════════════════════
 
-    // ── Fullscreen ────────────────────────────────────────────────────
-    document.getElementById('btn-fullscreen').addEventListener('click', () => {
-      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-      else document.exitFullscreen();
+    const HOLD_MS = 600; // slightly faster capture
+    const ANGLE_TOL = 8;
+
+    function buildCheckpoints() {
+      const pts = [];
+      // 3 layers × 10 shots = 30 total for a 3-row 360° panorama.
+      // TOP: tilt phone UP ~30°; CENTER: level; BOTTOM: tilt DOWN ~30°.
+      const LAYERS = [
+        // { name: 'TOP',    pitch:  30 },
+        { name: 'CENTER', pitch:   0 },
+        // { name: 'BOTTOM', pitch: -30 },
+      ];
+      for (const lay of LAYERS) {
+        for (let i = 0; i < 10; i++) {
+          let yaw = -i * 36;
+          // Normalize yaw to [-180, 180] if necessary, but 0, -36, -72 naturally works well with differences.
+          pts.push({ yaw, pitch: lay.pitch, layer: lay.name, done: false });
+        }
+      }
+      return pts;
+    }
+
+    let checkpoints = buildCheckpoints();
+    const TOTAL_TARGETS = checkpoints.length;
+
+    function initSpots() {
+      const container = document.getElementById('spots-container');
+      if (!container) return;
+      container.innerHTML = '';
+      checkpoints.forEach((cp, i) => {
+        const el = document.createElement('div');
+        el.className = 'cam-spot' + (cp.done ? ' done' : '');
+        el.id = 'spot-' + i;
+        
+        // Add thumbnail image element
+        const thumb = document.createElement('img');
+        thumb.className = 'thumb';
+        thumb.id = 'thumb-' + i;
+        if (cp.thumbUrl) thumb.src = cp.thumbUrl;
+        el.appendChild(thumb);
+        
+        container.appendChild(el);
+      });
+    }
+    initSpots();
+
+    let currentTarget = 0;
+    let holdTimer = null;
+    let holdStart = null;
+    let gyroActive = false;
+    let facingMode = 'environment';
+    let stream = null;
+    let isCapturing = false;
+    let currentLayerIdx = 0; // 0 = TOP, 1 = CENTER, 2 = BOTTOM
+
+    let devAlpha = 0, devBeta = 0, devGamma = 0;
+
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const noCamera = document.getElementById('no-camera');
+    const arFinder = document.getElementById('ar-finder');
+    const arArrow = document.getElementById('ar-arrow');
+    const holdRingProgress = document.getElementById('hold-ring-progress');
+    const dirHint = document.getElementById('direction-hint');
+    const minimap = document.getElementById('minimap');
+    const gyroDisplay = document.getElementById('gyro-display');
+    const gyroNotice = document.getElementById('gyro-notice');
+    const flashEl = document.getElementById('flash');
+    const progressLabel = document.getElementById('progress-label');
+    const btnCapture = document.getElementById('btn-capture');
+    const btnDone = document.getElementById('btn-done');
+    const btnRecenter = document.getElementById('btn-recenter');
+    const btnClear = document.getElementById('btn-clear');
+    const btnFlip = document.getElementById('btn-flip');
+    const importInput = document.getElementById('import-input');
+    const toastEl = document.getElementById('toast');
+    const finishScreen = document.getElementById('finish-screen');
+    const finishMsg = document.getElementById('finish-msg');
+    const btnFinishStitch = document.getElementById('btn-finish-stitch');
+    const btnFinishMore = document.getElementById('btn-finish-more');
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CHECKPOINT MINIMAP (Removed to simplify UI)
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function buildGrid() { }
+    function updateGrid() { }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // PROGRESS
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function updateProgress() {
+      const done = checkpoints.filter(c => c.done).length;
+      progressLabel.textContent = `${done} / ${TOTAL_TARGETS}`;
+      btnDone.disabled = done < 2;
+      // Update layer badge
+      const activeCp = (currentTarget < TOTAL_TARGETS) ? checkpoints[currentTarget] : null;
+      const layerBadge = document.getElementById('layer-badge');
+      if (layerBadge && activeCp) {
+        const icons = { TOP: '🔝', CENTER: '🎯', BOTTOM: '⬇️' };
+        layerBadge.textContent = `${icons[activeCp.layer] || '📸'} ${activeCp.layer} LAYER`;
+        layerBadge.className = activeCp.layer.toLowerCase();
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CAMERA INIT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function startCamera(mode = 'environment') {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: mode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+        video.srcObject = stream;
+        noCamera.style.display = 'none';
+        facingMode = mode;
+      } catch (err) {
+        console.warn('Camera error:', err);
+        noCamera.style.display = 'flex';
+      }
+    }
+
+    document.getElementById('btn-request-cam').addEventListener('click', () => startCamera());
+    startCamera();
+    btnFlip.addEventListener('click', () => startCamera(facingMode === 'environment' ? 'user' : 'environment'));
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // GYROSCOPE
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const iosGyroBtn = document.getElementById('ios-gyro-btn');
+    const staticDotsGrid = document.getElementById('static-dots-grid');
+
+    // Build the static fallback grid — single horizontal row of 12 dots
+    function buildStaticGrid() {
+      staticDotsGrid.innerHTML = '';
+      ['CENTER'].forEach((layerName) => {
+        const row = document.createElement('div');
+        row.className = 'static-dot-row';
+        checkpoints.forEach((cp, idx) => {
+          if (cp.layer !== layerName) return;
+          const dot = document.createElement('div');
+          dot.className = 'static-dot' + (cp.done ? ' done' : '');
+          dot.id = 'sdot-' + idx;
+          row.appendChild(dot);
+        });
+        staticDotsGrid.appendChild(row);
+      });
+    }
+
+    function updateStaticGrid() {
+      checkpoints.forEach((cp, i) => {
+        const el = document.getElementById('sdot-' + i);
+        if (!el) return;
+        if (cp.done) {
+          el.classList.add('done');
+        } else {
+          el.classList.remove('done');
+          // Highlight the current target
+          el.style.background = (i === currentTarget)
+            ? 'rgba(255,255,255,1)'
+            : 'rgba(234,191,19,0.9)';
+          el.style.boxShadow = (i === currentTarget)
+            ? '0 0 12px 4px rgba(255,255,255,0.7)'
+            : '';
+        }
+      });
+    }
+
+    function showStaticFallback() {
+      staticDotsGrid.style.display = 'flex';
+      buildStaticGrid();
+      // Advance target on manual capture button tap
+      btnCapture.style.display = 'block';
+    }
+
+    function hideStaticFallback() {
+      staticDotsGrid.style.display = 'none';
+    }
+
+    async function requestGyro() {
+      const hasPermissionAPI = typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function';
+
+      if (hasPermissionAPI) {
+        // iOS 13+: requestPermission MUST be called from a user gesture.
+        // Show a button to trigger it.
+        iosGyroBtn.style.display = 'block';
+        return; // Wait for the button click
+      }
+
+      // Non-iOS: attach listener directly
+      window.addEventListener('deviceorientation', onOrientation, true);
+      requestAnimationFrame(renderLoop);
+    }
+
+    async function grantIOSGyro() {
+      iosGyroBtn.style.display = 'none';
+      try {
+        const perm = await DeviceOrientationEvent.requestPermission();
+        if (perm === 'granted') {
+          window.addEventListener('deviceorientation', onOrientation, true);
+          requestAnimationFrame(renderLoop);
+          hideStaticFallback();
+          gyroNotice.style.display = 'none';
+        } else {
+          gyroNotice.style.display = 'block';
+          showStaticFallback();
+        }
+      } catch (err) {
+        console.warn('iOS gyro permission error:', err);
+        gyroNotice.style.display = 'block';
+        showStaticFallback();
+      }
+    }
+
+    iosGyroBtn.addEventListener('click', grantIOSGyro);
+
+    function onOrientation(e) {
+      if (e.alpha === null) {
+        if (!gyroActive) { gyroNotice.style.display = 'block'; showStaticFallback(); }
+        return;
+      }
+      if (!gyroActive) {
+        gyroActive = true;
+        gyroNotice.style.display = 'none';
+        hideStaticFallback();
+      }
+      devAlpha = e.alpha || 0;
+      devBeta = e.beta || 0;
+      devGamma = e.gamma || 0;
+    }
+
+    requestGyro();
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // ANGLE MATCHING & RENDER LOOP
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let vYaw = null;
+    let vPitch = null;
+    let vRoll = null;
+
+    function lerpAngle(current, target, factor) {
+      if (current === null) return target;
+      let diff = target - current;
+      while (diff > 180) diff -= 360;
+      while (diff < -180) diff += 360;
+      return current + diff * factor;
+    }
+
+    function renderLoop() {
+      requestAnimationFrame(renderLoop);
+      if (gyroActive) checkAngle();
+    }
+
+    function checkAngle() {
+      if (!gyroActive) return;
+
+      // ── Convert Euler angles to World Camera Vectors ──
+      const rad = Math.PI / 180;
+      const sa = Math.sin(devAlpha * rad), ca = Math.cos(devAlpha * rad);
+      const sb = Math.sin(devBeta * rad), cb = Math.cos(devBeta * rad);
+      const sc = Math.sin(devGamma * rad), cc = Math.cos(devGamma * rad);
+
+      // Extract accurate Cartesian forward vectors (-Z axis of device)
+      const CamX = ca * sb * cc - sa * sc;
+      const CamY = sa * sb * cc + ca * sc;
+      const CamZ = -cb * cc;
+
+      let rawYaw = Math.atan2(CamY, CamX) / rad;
+      let rawPitch = Math.asin(Math.max(-1, Math.min(1, CamZ))) / rad;
+
+      // Compute display roll safely
+      let rawRoll = -devGamma;
+      if (devBeta > 90) rawRoll = devGamma;
+
+      rawYaw += yawOffset; // Apply manual recenter offset
+
+      // Heavy smoothing applied to world vectors
+      vYaw = lerpAngle(vYaw, rawYaw, 0.45);
+      vPitch = lerpAngle(vPitch, rawPitch, 0.45);
+      vRoll = lerpAngle(vRoll, rawRoll, 0.15);
+
+      document.getElementById('g-alpha').textContent = vYaw.toFixed(1);
+      document.getElementById('g-beta').textContent = vPitch.toFixed(1);
+      document.getElementById('g-gamma').textContent = vRoll.toFixed(1);
+
+      let pxPerDeg = window.innerWidth / (facingMode === 'user' ? -90 : 90);
+      let cx = window.innerWidth / 2;
+      let cy = window.innerHeight / 2;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      let closestDist = Infinity;
+      let closestIdx = -1;
+
+      // Show all spots: done spots with thumbnails, and active target for capture
+      for (let i = 0; i < checkpoints.length; i++) {
+        let cp = checkpoints[i];
+        let spotEl = document.getElementById('spot-' + i);
+        if (spotEl) {
+          spotEl.classList.remove('active');
+
+          if (cp.done) {
+            // Show completed spot with thumbnail at its original position
+            spotEl.style.display = 'block';
+            spotEl.classList.add('done');
+            let dYaw = vYaw - cp.yaw;
+            while (dYaw > 180) dYaw -= 360;
+            while (dYaw < -180) dYaw += 360;
+            let dPitch = cp.pitch - vPitch;
+            let tx = cx + (dYaw * pxPerDeg);
+            let ty = cy - (dPitch * pxPerDeg);
+            spotEl.style.transform = `translate(${tx - cx}px, ${ty - cy}px)`;
+          } else if (i === currentTarget) {
+            // Only show current target dot (not all undone dots)
+            const LAYER_NAMES = ['CENTER'];
+            if (cp.layer && cp.layer !== LAYER_NAMES[currentLayerIdx]) continue;
+            let dYaw = vYaw - cp.yaw;
+            while (dYaw > 180) dYaw -= 360;
+            while (dYaw < -180) dYaw += 360;
+            let dPitch = cp.pitch - vPitch;
+            let tx = cx + (dYaw * pxPerDeg);
+            let ty = cy - (dPitch * pxPerDeg);
+            if (!cp.sTx) { cp.sTx = tx; cp.sTy = ty; }
+            if (Math.abs(tx - cp.sTx) > 800) { cp.sTx = tx; cp.sTy = ty; }
+            cp.sTx += (tx - cp.sTx) * 0.45;
+            cp.sTy += (ty - cp.sTy) * 0.45;
+            if (!(tx < -vw || tx > vw * 2 || ty < -vh || ty > vh * 2)) {
+              spotEl.style.display = 'block';
+              spotEl.style.transform = `translate(${cp.sTx - cx}px, ${cp.sTy - cy}px)`;
+              let dist = Math.sqrt(Math.pow(cp.sTx - cx, 2) + Math.pow(cp.sTy - cy, 2));
+              if (dist < closestDist) {
+                closestDist = dist;
+                closestIdx = i;
+              }
+            } else {
+              cp.sTx = tx; cp.sTy = ty;
+            }
+          } else {
+            spotEl.style.display = 'none';
+          }
+        }
+      }
+
+      // Default the target to the closest visible spot, or the first undone if none are visible
+      if (closestIdx !== -1) {
+        currentTarget = closestIdx;
+      } else {
+        currentTarget = checkpoints.findIndex(c => !c.done);
+      }
+
+      let cpIdx = currentTarget;
+
+      arFinder.style.transform = `translate(-50%, -50%) rotate(${vRoll}deg)`;
+
+      const ALIGN_RADIUS = 30;
+      const onTarget = (closestIdx !== -1 && closestDist <= ALIGN_RADIUS);
+
+      if (onTarget && cpIdx >= 0 && cpIdx < checkpoints.length) {
+        document.getElementById('spot-' + cpIdx).classList.add('active');
+
+        arFinder.classList.add('holding');
+        arArrow.classList.remove('show');
+        if (!holdStart) holdStart = Date.now();
+        const elapsed = Date.now() - holdStart;
+
+        // Removed hold ring progress update since the line was removed
+        if (holdRingProgress) {
+          const pct = Math.min(elapsed / HOLD_MS, 1);
+          holdRingProgress.style.strokeDashoffset = 289 - (289 * pct);
+        }
+
+        if (elapsed >= HOLD_MS && !isCapturing) {
+          captureFrame();
+        }
+      } else {
+        cancelHold();
+
+        if (cpIdx >= 0 && cpIdx < checkpoints.length && closestDist > 65) {
+          arArrow.classList.add('show');
+          let dx = checkpoints[cpIdx].sTx - cx;
+          let dy = checkpoints[cpIdx].sTy - cy;
+          let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          arArrow.style.transform = `rotate(${angle}deg) translateX(55px)`;
+        } else {
+          arArrow.classList.remove('show');
+        }
+      }
+    }
+
+    setInterval(() => {
+      if (gyroActive) checkAngle();
+      else updateStaticGrid(); // keep static grid in sync
+    }, 100);
+
+    function cancelHold() {
+      holdStart = null;
+      arFinder.classList.remove('holding');
+      if (holdRingProgress) holdRingProgress.style.strokeDashoffset = 289;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CAPTURE
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function captureFrame() {
+      if (isCapturing) return;
+      isCapturing = true;
+      triggerFlash();
+
+      const MAX_DIM = 1280;
+      let vw = video.videoWidth || 1280;
+      let vh = video.videoHeight || 720;
+      if (vw > MAX_DIM || vh > MAX_DIM) {
+        if (vw > vh) { vh = Math.floor(vh * (MAX_DIM / vw)); vw = MAX_DIM; }
+        else { vw = Math.floor(vw * (MAX_DIM / vh)); vh = MAX_DIM; }
+      }
+      canvas.width = vw; canvas.height = vh;
+      ctx.drawImage(video, 0, 0, vw, vh);
+
+      canvas.toBlob(async (blob) => {
+        if (holdRingProgress) holdRingProgress.style.strokeDashoffset = 0;
+        try {
+          const formData = new FormData();
+          const filename = `${(currentTarget + 1).toString().padStart(2, '0')}.jpg`;
+          formData.append('image', blob, filename);
+          const res = await api(`/api/upload/${SESSION_ID}?idx=${currentTarget}`, { method: 'POST', body: formData });
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server returned ${res.status}: ${errText.substring(0, 60)}...`);
+          }
+          const data = await res.json();
+          if (data.success) {
+            capturedCount = data.total;
+            if (currentTarget < TOTAL_TARGETS) {
+              checkpoints[currentTarget].done = true;
+              // Create 100x100 thumbnail
+              const thumbCanvas = document.createElement('canvas');
+              thumbCanvas.width = 100;
+              thumbCanvas.height = 100;
+              const tCtx = thumbCanvas.getContext('2d');
+              const sz = Math.min(canvas.width, canvas.height);
+              const sx = (canvas.width - sz) / 2;
+              const sy = (canvas.height - sz) / 2;
+              tCtx.drawImage(canvas, sx, sy, sz, sz, 0, 0, 100, 100);
+              const url = thumbCanvas.toDataURL('image/jpeg', 0.7);
+              checkpoints[currentTarget].thumbUrl = url;
+              const img = document.getElementById('thumb-' + currentTarget);
+              if (img) img.src = url;
+              const spot = document.getElementById('spot-' + currentTarget);
+              if (spot) spot.classList.add('done');
+            }
+
+            let allDone = true;
+            for (let i = 0; i < TOTAL_TARGETS; i++) {
+              if (!checkpoints[i].done) { allDone = false; break; }
+            }
+            if (allDone) { showFinish(); }
+            else {
+              currentTarget = checkpoints.findIndex(c => !c.done);
+              if (currentTarget === -1) currentTarget = 0;
+              currentLayerIdx = 0;
+
+              updateProgress();
+              updateDirectionHint();
+              showToast(`✅ Photo ${capturedCount} saved`, 'success', 1500);
+            }
+          } else {
+            showToast('❌ ' + data.message, 'error');
+          }
+        } catch (err) {
+          showToast('⚠️ Upload failed: ' + err.message, 'error');
+        } finally {
+          setTimeout(() => { isCapturing = false; cancelHold(); }, 600);
+        }
+      }, 'image/jpeg', 0.85);
+    }
+
+    function triggerFlash() {
+      flashEl.classList.add('on');
+      setTimeout(() => flashEl.classList.remove('on'), 150);
+    }
+
+    btnCapture.addEventListener('click', () => captureFrame());
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // DIRECTION HINT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const YAW_LABELS = {
+      0: '↑ Face forward',
+      36: '← Rotate 36°',
+      72: '← Rotate 72°',
+      108: '← Rotate 108°',
+      144: '← Rotate 144°',
+      180: '↩ Turn around (180°)',
+      216: '→ Rotate 216°',
+      252: '→ Rotate 252°',
+      288: '→ Rotate 288°',
+      324: '→ Rotate 324°',
+    };
+
+    const LAYER_START = { TOP: 0, CENTER: 10, BOTTOM: 20 };
+
+    function updateDirectionHint() {
+      if (currentTarget >= TOTAL_TARGETS || currentTarget < 0) return;
+
+      let cp = checkpoints[currentTarget];
+      if (!cp || cp.done) {
+        const firstUn = checkpoints.findIndex(c => !c.done);
+        if (firstUn === -1) { dirHint.textContent = '✅ All done!'; return; }
+        cp = checkpoints[firstUn];
+      }
+
+      const idxInLayer = checkpoints.indexOf(cp) - (LAYER_START[cp.layer] || 0) + 1;
+      const lbl = YAW_LABELS[cp.yaw] || `Rotate to ${cp.yaw}°`;
+      dirHint.textContent = `[${cp.layer}] ${idxInLayer}/10: ${lbl}`;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // STITCH
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function doStitch(btn) {
+      btn.classList.add('loading');
+      btn.disabled = true;
+      try {
+        const res = await api(`/api/stitch/${SESSION_ID}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Panorama stitched!', 'success');
+          setTimeout(() => {
+            sessionStorage.setItem('active_session', SESSION_ID);
+            location.href = `detail.html?session=${SESSION_ID}`;
+          }, 1200);
+        } else {
+          showToast('❌ ' + data.message, 'error');
+          btn.classList.remove('loading');
+          btn.disabled = false;
+        }
+      } catch (err) {
+        showToast('⚠️ ' + err.message, 'error');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+      }
+    }
+
+    if (btnDone) btnDone.addEventListener('click', () => doStitch(btnDone));
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // BOTTOM ACTIONS
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let yawOffset = 0;
+
+    if (btnRecenter) {
+      btnRecenter.addEventListener('click', () => {
+        // Reset the horizontal rotation so the current view becomes '0'
+        yawOffset -= vYaw;
+        showToast('🎯 View Re-centered', 'info');
+      });
+    }
+
+    if (btnClear) {
+      btnClear.addEventListener('click', async () => {
+        if (!confirm("Are you sure you want to clear all progress?")) return;
+
+        try {
+          await api(`/api/session/${SESSION_ID}/delete`, { method: 'POST' });
+        } catch (err) {
+          // It might fail if session is completely new, that's fine.
+        }
+
+        // Generate a fresh session local ID so it restarts empty on the server too
+        SESSION_ID = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+        window.history.replaceState({}, '', `?session=${SESSION_ID}`);
+
+        checkpoints = buildCheckpoints();
+        initSpots();
+        currentTarget = 0;
+        capturedCount = 0;
+        yawOffset = 0;
+
+        buildGrid();
+        updateProgress();
+        updateDirectionHint();
+        showToast('🗑️ Cleared successfully.', 'info');
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // FINISH SCREEN
+    // ════════════════════════════════════════════════════════════════════════════
+
+    function showFinish() {
+      updateProgress();
+      finishMsg.textContent = `You've captured all 10 photos. Ready to stitch your 360° panorama!`;
+      finishScreen.style.display = 'flex';
+    }
+
+    btnFinishStitch.addEventListener('click', () => doStitch(btnFinishStitch));
+    btnFinishMore.addEventListener('click', () => {
+      finishScreen.style.display = 'none';
+      checkpoints = buildCheckpoints();
+      initSpots();
+      currentTarget = 0;
+      buildGrid(); updateProgress(); updateDirectionHint();
+      showToast('📷 Keep capturing more photos!', 'info');
     });
-  </script>
 
+    // IMPORT EXISTING PANORAMA logic removed for minimal UI 
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // TOAST
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let toastTimer;
+    function showToast(msg, type = '', duration = 3000) {
+      toastEl.textContent = msg;
+      toastEl.className = 'show ' + type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastEl.className = ''; }, duration);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // INIT
+    // ════════════════════════════════════════════════════════════════════════════
+
+    buildGrid();
+    updateProgress();
+    updateDirectionHint();
+
+    // Load session info (sets capturedCount and initialises checkpoints)
+    loadSession();
+
+    setTimeout(() => {
+      if (!gyroActive) gyroNotice.style.display = 'block';
+    }, 2000);
+  </script>
 </body>
 
 </html>
