@@ -266,6 +266,14 @@ def _perspective_stitch_3d(images, results_dir):
                 print(f"    [!] Could not find homography for image {i+1}")
                 return None
             
+            # Validate homography matrix - must be 3x3 float32
+            if H.shape != (3, 3):
+                print(f"    [!] Invalid homography shape: {H.shape}, expected (3,3)")
+                return None
+            
+            # Ensure H is float32
+            H = H.astype(np.float32)
+            
             # Get dimensions
             h1, w1 = result.shape[:2]
             h2, w2 = images[i].shape[:2]
@@ -285,11 +293,14 @@ def _perspective_stitch_3d(images, results_dir):
             [x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 50)
             
             # Create translation matrix to shift the result with padding
-            translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+            translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]], dtype=np.float32)
+            
+            # Combine translation with homography
+            combined_H = translation.dot(H).astype(np.float32)
             
             # Warp the current result and the new image
             result_warped = cv2.warpPerspective(result, translation, (x_max - x_min, y_max - y_min))
-            img_warped = cv2.warpPerspective(images[i], translation.dot(H), (x_max - x_min, y_max - y_min))
+            img_warped = cv2.warpPerspective(images[i], combined_H, (x_max - x_min, y_max - y_min))
             
             # Create masks for blending
             mask1 = np.zeros((y_max - y_min, x_max - x_min), dtype=np.uint8)
