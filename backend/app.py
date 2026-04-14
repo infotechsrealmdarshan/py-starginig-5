@@ -5,6 +5,7 @@ import uuid
 import threading
 import numpy as np
 import re
+import gc
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
@@ -156,12 +157,17 @@ def _run_stitch(session_id: str, image_paths: list, results_dir: str, preserve_o
         with _stitch_lock:
             _stitch_status[session_id] = "done" if result_paths else "error"
         print(f"[*] Stitching done: {len(result_paths)} panorama(s) saved.")
+        
+        # Force garbage collection to free memory
+        gc.collect()
+        print(f"[*] Memory cleanup completed for session {session_id}")
     except Exception as exc:
         import traceback
         print(f"[ERROR] Stitching failed: {exc}")
         print(traceback.format_exc())
         with _stitch_lock:
             _stitch_status[session_id] = "error"
+        gc.collect()
 
 
 # ──────────────────────────────────────────────────────────────────────
