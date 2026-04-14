@@ -25,3 +25,6 @@ PyJWT>=2.8.0
 
 # WSGI server — required for Render deployment
 gunicorn==21.2.0
+
+# MongoDB — for session storage
+pymongo==4.6.2
