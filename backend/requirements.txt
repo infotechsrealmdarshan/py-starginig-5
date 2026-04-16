@@ -25,3 +25,6 @@ PyJWT>=2.8.0
 
 # Production WSGI server
 gunicorn>=21.0.0
+
+# MongoDB database
+pymongo>=4.6.0
