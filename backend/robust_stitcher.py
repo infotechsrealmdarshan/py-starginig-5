@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import os
-import gc
 from typing import List
 
 # VERSION: 2024-01-07-NO-CROP-v4
@@ -125,16 +124,16 @@ def find_homography_between_images(img1, img2):
     # Try multiple feature detectors with different parameters
     detectors = []
     
-    # 1. SIFT with memory-optimized parameters for 512MB limit
+    # 1. SIFT with optimized parameters for circular panoramas
     try:
-        sift = cv2.SIFT_create(nfeatures=2000, contrastThreshold=0.01, edgeThreshold=15, sigma=1.0)
+        sift = cv2.SIFT_create(nfeatures=8000, contrastThreshold=0.008, edgeThreshold=15, sigma=1.0)
         detectors.append(('SIFT', sift))
     except:
         pass
     
-    # 2. ORB with memory-optimized parameters
+    # 2. ORB with enhanced parameters
     try:
-        orb = cv2.ORB_create(nfeatures=2000, scaleFactor=1.2, nlevels=8, edgeThreshold=20, firstLevel=0, WTA_K=2, scoreType=cv2.ORB_HARRIS_SCORE, patchSize=31, fastThreshold=15)
+        orb = cv2.ORB_create(nfeatures=8000, scaleFactor=1.1, nlevels=12, edgeThreshold=20, firstLevel=0, WTA_K=2, scoreType=cv2.ORB_HARRIS_SCORE, patchSize=31, fastThreshold=15)
         detectors.append(('ORB', orb))
     except:
         pass
@@ -225,8 +224,8 @@ def feature_based_stitch(images, results_dir):
         print("[!] Need at least 2 images")
         return []
     
-    # Process images with moderate resolution to stay within memory limits
-    target_h = 800  # Reduced for 512MB Render limit
+    # Process images with higher resolution for better 3D effect
+    target_h = 1600  # Even higher for better detail
     processed = []
     for i, img in enumerate(images):
         h, w = img.shape[:2]
@@ -329,9 +328,6 @@ def _perspective_stitch_3d(images, results_dir):
                 result_warped[mask2 == 255] = img_warped[mask2 == 255]
             
             result = result_warped
-            # Free memory from warped intermediates
-            del result_warped, img_warped, mask1, mask2
-            gc.collect()
         
         # Keep natural colors - no final balancing
         result = np.clip(result, 0, 255).astype(np.uint8)
@@ -402,10 +398,6 @@ def _enhanced_horizontal_stitch(images, results_dir):
     result[mask] /= weights_sum[mask][:, np.newaxis]
     result = np.clip(result, 0, 255).astype(np.uint8)
     
-    # Free large arrays
-    del weights_sum, mask
-    gc.collect()
-    
     # FORCE circular seam blending
     print("[*] Forcing circular seam blending...")
     print("[*] Aligning last image to first...")
@@ -437,29 +429,17 @@ def stitch_images_robustly(image_paths: List[str], results_dir: str, preserve_or
     
     print(f"[*] Loading {len(image_paths)} images...")
     images = []
-    
-    # Aggressive memory management for 512MB Render limit
-    # Calculate safe dimensions based on image count
-    if len(image_paths) > 15:
-        max_dim = 1200  # Very aggressive for many images
-    elif len(image_paths) > 8:
-        max_dim = 1500
-    else:
-        max_dim = 1800
-    
-    print(f"    Memory limit: 512MB, Max dimension: {max_dim}px for {len(image_paths)} images")
-    
     for path in image_paths:
         img = cv2.imread(path)
         if img is not None:
-            # Always resize to stay within memory limits
+            # Keep original size - only resize if extremely large
             h, w = img.shape[:2]
-            curr_max = max(h, w)
-            if curr_max > max_dim:
-                scale = max_dim / curr_max
+            max_dim = max(h, w)
+            if max_dim > 2000:
+                scale = 2000 / max_dim
                 new_w = int(w * scale)
                 new_h = int(h * scale)
-                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
                 print(f"    ✓ {os.path.basename(path)}: {img.shape[1]}x{img.shape[0]} (resized from {w}x{h})")
             else:
                 print(f"    ✓ {os.path.basename(path)}: {img.shape[1]}x{img.shape[0]} (original)")
@@ -470,10 +450,6 @@ def stitch_images_robustly(image_paths: List[str], results_dir: str, preserve_or
     if len(images) < 2:
         print("[!] Not enough valid images")
         return []
-    
-    # Force garbage collection to free memory before stitching
-    gc.collect()
-    print(f"    Memory: Loaded {len(images)} images, GC completed")
     
     # If preserve_order is True, use simple side-by-side stitching
     if preserve_order:

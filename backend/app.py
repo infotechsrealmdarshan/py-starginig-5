@@ -5,18 +5,16 @@ import uuid
 import threading
 import numpy as np
 import re
-import gc
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-from pymongo import MongoClient
-from bson import ObjectId
 
 app = Flask(__name__)
 CORS(app)
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
+SESSIONS_DB  = os.path.join(BASE_DIR, "sessions.json")
 ALLOWED_EXT  = {'.jpg', '.jpeg', '.png', '.webp'}
 
 # In-memory stitch-job status  {session_id: "pending"|"running"|"done"|"error"}
@@ -25,64 +23,20 @@ _stitch_lock = threading.Lock()
 
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
-# ──────────────────────────────────────────────────────────────────────
-# MongoDB Configuration
-# ──────────────────────────────────────────────────────────────────────
-MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://infotechsrealmdarshan_db_user:Ne0ld5t0SwmjZwBm@straging.7enrfui.mongodb.net/straging_5?retryWrites=true&w=majority')
-try:
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = mongo_client.get_database()
-    sessions_collection = db.sessions
-    print(f"[MONGODB] Connected to: {MONGO_URI}")
-except Exception as e:
-    print(f"[MONGODB] Connection failed: {e}")
-    mongo_client = None
-    sessions_collection = None
 
 # ──────────────────────────────────────────────────────────────────────
-# Persistence helpers (MongoDB)
+# Persistence helpers
 # ──────────────────────────────────────────────────────────────────────
 def _load_sessions() -> dict:
-    """Load all sessions from MongoDB."""
-    if sessions_collection is None:
-        return {}
-    try:
-        sessions = {}
-        for doc in sessions_collection.find():
-            sid = str(doc.pop('_id'))
-            sessions[sid] = doc
-        return sessions
-    except Exception as e:
-        print(f"[MONGODB] Error loading sessions: {e}")
-        return {}
-
-
-def _save_session(session_id: str, data: dict) -> None:
-    """Save or update a single session in MongoDB."""
-    if sessions_collection is None:
-        return
-    try:
-        data['_id'] = session_id
-        data['updated_at'] = datetime.utcnow().isoformat()
-        sessions_collection.replace_one({'_id': session_id}, data, upsert=True)
-    except Exception as e:
-        print(f"[MONGODB] Error saving session {session_id}: {e}")
-
-
-def _delete_session(session_id: str) -> None:
-    """Delete a session from MongoDB."""
-    if sessions_collection is None:
-        return
-    try:
-        sessions_collection.delete_one({'_id': session_id})
-    except Exception as e:
-        print(f"[MONGODB] Error deleting session {session_id}: {e}")
+    if os.path.exists(SESSIONS_DB):
+        with open(SESSIONS_DB, 'r') as f:
+            return json.load(f)
+    return {}
 
 
 def _save_sessions(data: dict) -> None:
-    """Legacy compatibility - saves all sessions."""
-    for sid, meta in data.items():
-        _save_session(sid, meta)
+    with open(SESSIONS_DB, 'w') as f:
+        json.dump(data, f, indent=2)
 
 
 def _session_dirs(session_id: str):
@@ -157,17 +111,12 @@ def _run_stitch(session_id: str, image_paths: list, results_dir: str, preserve_o
         with _stitch_lock:
             _stitch_status[session_id] = "done" if result_paths else "error"
         print(f"[*] Stitching done: {len(result_paths)} panorama(s) saved.")
-        
-        # Force garbage collection to free memory
-        gc.collect()
-        print(f"[*] Memory cleanup completed for session {session_id}")
     except Exception as exc:
         import traceback
         print(f"[ERROR] Stitching failed: {exc}")
         print(traceback.format_exc())
         with _stitch_lock:
             _stitch_status[session_id] = "error"
-        gc.collect()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -525,7 +474,8 @@ def api_delete_session(session_id: str):
     base, _, _ = _session_dirs(session_id)
     if os.path.exists(base):
         shutil.rmtree(base)
-    _delete_session(session_id)
+    del sessions[session_id]
+    _save_sessions(sessions)
     with _stitch_lock:
         _stitch_status.pop(session_id, None)
     return jsonify({"success": True})
