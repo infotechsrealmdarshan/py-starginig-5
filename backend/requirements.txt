@@ -22,3 +22,6 @@ cryptography>=41.0.0
 # Auth — password hashing and JWT tokens
 bcrypt>=4.0.0
 PyJWT>=2.8.0
+
+# Production WSGI server
+gunicorn>=21.0.0
