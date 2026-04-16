@@ -8,6 +8,8 @@ import re
 from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +19,20 @@ SESSIONS_DIR = os.path.join(BASE_DIR, "sessions")
 SESSIONS_DB  = os.path.join(BASE_DIR, "sessions.json")
 ALLOWED_EXT  = {'.jpg', '.jpeg', '.png', '.webp'}
 
+# ──────────────────────────────────────────────────────────────────────
+# MongoDB Configuration
+# ──────────────────────────────────────────────────────────────────────
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://infotechsrealmdarshan_db_user:VdtXFpsbpMB3awmc@straging.8qv8vqh.mongodb.net/straging?retryWrites=true&w=majority')
+try:
+    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    db = mongo_client.get_database('straging')
+    sessions_collection = db.get_collection('sessions')
+    print("[✓] MongoDB connected successfully")
+except Exception as e:
+    print(f"[!] MongoDB connection failed: {e}")
+    mongo_client = None
+    sessions_collection = None
+
 # In-memory stitch-job status  {session_id: "pending"|"running"|"done"|"error"}
 _stitch_status: dict = {}
 _stitch_lock = threading.Lock()
@@ -25,18 +41,72 @@ os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Persistence helpers
+# Persistence helpers (MongoDB + JSON fallback)
 # ──────────────────────────────────────────────────────────────────────
 def _load_sessions() -> dict:
+    """Load sessions from MongoDB, fallback to JSON file"""
+    if sessions_collection:
+        try:
+            sessions = {}
+            for doc in sessions_collection.find():
+                sid = doc.get('_id') or doc.get('session_id')
+                if sid:
+                    sessions[sid] = {
+                        "name": doc.get('name', 'Untitled'),
+                        "created_at": doc.get('created_at', ''),
+                        "capture_count": doc.get('capture_count', 0),
+                        "stitch_count": doc.get('stitch_count', 0),
+                    }
+            return sessions
+        except Exception as e:
+            print(f"[!] MongoDB load error: {e}")
+    # Fallback to JSON
     if os.path.exists(SESSIONS_DB):
         with open(SESSIONS_DB, 'r') as f:
             return json.load(f)
     return {}
 
 
-def _save_sessions(data: dict) -> None:
+def _save_session(session_id: str, data: dict) -> None:
+    """Save single session to MongoDB and JSON fallback"""
+    # Save to MongoDB
+    if sessions_collection:
+        try:
+            doc = {
+                '_id': session_id,
+                'session_id': session_id,
+                'name': data.get('name', 'Untitled'),
+                'created_at': data.get('created_at', datetime.utcnow().isoformat()),
+                'capture_count': data.get('capture_count', 0),
+                'stitch_count': data.get('stitch_count', 0),
+            }
+            sessions_collection.update_one(
+                {'_id': session_id},
+                {'$set': doc},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"[!] MongoDB save error: {e}")
+    # Fallback to JSON
+    sessions = _load_sessions()
+    sessions[session_id] = data
     with open(SESSIONS_DB, 'w') as f:
-        json.dump(data, f, indent=2)
+        json.dump(sessions, f, indent=2)
+
+
+def _delete_session(session_id: str) -> None:
+    """Delete session from MongoDB and JSON"""
+    if sessions_collection:
+        try:
+            sessions_collection.delete_one({'_id': session_id})
+        except Exception as e:
+            print(f"[!] MongoDB delete error: {e}")
+    # Remove from JSON
+    sessions = _load_sessions()
+    if session_id in sessions:
+        del sessions[session_id]
+        with open(SESSIONS_DB, 'w') as f:
+            json.dump(sessions, f, indent=2)
 
 
 def _session_dirs(session_id: str):
@@ -106,7 +176,7 @@ def _run_stitch(session_id: str, image_paths: list, results_dir: str, preserve_o
         if session_id in sessions:
             sessions[session_id]['capture_count'] = len(image_paths)
             sessions[session_id]['stitch_count']  = len(result_paths)
-            _save_sessions(sessions)
+            _save_session(session_id, sessions[session_id])
 
         with _stitch_lock:
             _stitch_status[session_id] = "done" if result_paths else "error"
@@ -135,12 +205,11 @@ def api_new_session():
         os.makedirs(captures_dir, exist_ok=True)
         os.makedirs(results_dir,  exist_ok=True)
 
-        sessions = _load_sessions()
-        sessions[sid] = {
+        session_data = {
             "name":       name,
             "created_at": datetime.utcnow().isoformat(),
         }
-        _save_sessions(sessions)
+        _save_session(sid, session_data)
         return jsonify({"success": True, "session_id": sid, "name": name})
     except Exception as e:
         import traceback; print(traceback.format_exc())
@@ -158,11 +227,11 @@ def api_upload(session_id: str):
 
     sessions = _load_sessions()
     if session_id not in sessions:
-        sessions[session_id] = {
+        session_data = {
             "name":       f"Session {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
             "created_at": datetime.utcnow().isoformat(),
         }
-        _save_sessions(sessions)
+        _save_session(session_id, session_data)
 
     file = request.files.get('image')
     if not file:
@@ -230,11 +299,11 @@ def api_upload_batch(session_id: str):
 
     sessions = _load_sessions()
     if session_id not in sessions:
-        sessions[session_id] = {
+        session_data = {
             "name":       f"Session {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
             "created_at": datetime.utcnow().isoformat(),
         }
-        _save_sessions(sessions)
+        _save_session(session_id, session_data)
 
     _, captures_dir, results_dir = _session_dirs(session_id)
     os.makedirs(captures_dir, exist_ok=True)
@@ -474,8 +543,7 @@ def api_delete_session(session_id: str):
     base, _, _ = _session_dirs(session_id)
     if os.path.exists(base):
         shutil.rmtree(base)
-    del sessions[session_id]
-    _save_sessions(sessions)
+    _delete_session(session_id)
     with _stitch_lock:
         _stitch_status.pop(session_id, None)
     return jsonify({"success": True})
